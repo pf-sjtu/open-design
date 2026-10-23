@@ -74,7 +74,12 @@ describe("desktop updater host boundary", () => {
     const wiring = main.slice(wiringStart, wiringEnd > wiringStart ? wiringEnd : undefined);
     expect(wiring).toContain("catch {\n              return null;");
     expect(wiring.match(/return null;/g)).toHaveLength(2);
-    expect(wiring).toContain("catch {\n              return false;");
+    // Auth registration is still soft-failing (never throws into startup), but
+    // it now retries a bounded number of times and logs before giving up.
+    expect(wiring).toContain("REGISTER_DESKTOP_AUTH_ATTEMPTS");
+    expect(wiring).toContain("} catch (error) {");
+    expect(wiring).toContain("return false;");
+    expect(wiring).not.toContain("throw lastError");
   });
 
   it("keeps obsolete installed-outer policy outside generic desktop while exposing the SHOW hook", () => {

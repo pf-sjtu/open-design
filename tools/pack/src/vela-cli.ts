@@ -118,6 +118,7 @@ export async function copyOptionalVelaCliBinary({
   requireBundled = false,
   resourceRoot,
   runCommand = runVelaCliCommand,
+  targetArch,
 }: {
   env?: NodeJS.ProcessEnv;
   importPackage?: (packageName: string) => Promise<VelaCliResolverModule>;
@@ -125,8 +126,9 @@ export async function copyOptionalVelaCliBinary({
   requireBundled?: boolean;
   resourceRoot: string;
   runCommand?: RunVelaCliCommand;
+  targetArch?: NodeJS.Architecture;
 }): Promise<{ source: string; target: string } | null> {
-  const source = await resolveOptionalVelaCliBinary({ env, importPackage, requireBundled });
+  const source = await resolveOptionalVelaCliBinary({ env, importPackage, requireBundled, targetArch });
   if (source == null) return null;
   if (requireBundled) {
     await validateBundledVelaCliBinary(source, runCommand);
@@ -345,56 +347,72 @@ export async function resolveOptionalVelaCliBinary({
   importPackage = async (packageName: string) =>
     import(packageName) as Promise<VelaCliResolverModule>,
   requireBundled = false,
+  targetArch,
 }: {
   env?: NodeJS.ProcessEnv;
   importPackage?: (packageName: string) => Promise<VelaCliResolverModule>;
   requireBundled?: boolean;
+  /**
+   * Payload architecture. Packaging passes the `--arch` target; leaving it
+   * undefined keeps the plain resolver semantics (no emulation fallback).
+   */
+  targetArch?: NodeJS.Architecture;
 } = {}): Promise<string | null> {
   const envSource = env[VELA_CLI_BIN_ENV]?.trim();
   if (envSource) return envSource;
 
-  // Vela has no win32-arm64 package: prefer the x64 CLI (runs under Windows ARM
-  // emulation) over silently dropping the binary from an arm64 payload.
-  const emulated = resolveEmulatedVelaCliBinary();
+  // Order matters: env > the installed package resolver > the x64 emulation
+  // fallback. The fallback only runs when the resolver has nothing for this
+  // platform (Vela publishes no win32-arm64 package), so mocks, x64 payloads and
+  // older CLIs keep the plain resolver path.
+  let resolver: VelaCliResolverModule | null = null;
+  let importError: unknown = null;
+  try {
+    resolver = await importPackage("@powerformer/vela-cli");
+  } catch (error) {
+    importError = error;
+  }
+
+  if (resolver != null && typeof resolver.resolveVelaCliBin === "function") {
+    // Never strict here: a strict resolver throws for an unsupported platform,
+    // which is exactly the case the emulation fallback below handles.
+    const resolved = await resolver.resolveVelaCliBin({ strict: false });
+    if (typeof resolved === "string") {
+      const normalized = resolved.trim();
+      if (normalized.length > 0) return normalized;
+    }
+    if (resolved && typeof resolved === "object" && typeof resolved.path === "string") {
+      const normalized = resolved.path.trim();
+      if (normalized.length > 0) return normalized;
+    }
+  }
+
+  // Vela has no win32-arm64 package: for an arm64 payload, bundle the x64 CLI
+  // (Windows ARM runs it under emulation) instead of dropping the binary. Keyed
+  // on the payload target, not the host, so a win-x64 payload built on an ARM64
+  // host still resolves its own binary through the resolver above.
+  const emulatedTarget = targetArch;
+  const emulated = emulatedTarget == null ? null : resolveEmulatedVelaCliBinary("win32", emulatedTarget);
   if (emulated != null) {
     process.stderr.write(
-      `[tools-pack] vela-cli has no native ${process.platform}-${process.arch} package; bundling ${EMULATED_VELA_CLI_PACKAGE_BY_PLATFORM[`${process.platform}-${process.arch}`]} (x64 emulation): ${emulated}\n`,
+      `[tools-pack] vela-cli has no native win32-${emulatedTarget} package; bundling ${EMULATED_VELA_CLI_PACKAGE_BY_PLATFORM[`win32-${emulatedTarget}`]} (x64 emulation): ${emulated}
+`,
     );
     return emulated;
   }
 
-  let resolver: VelaCliResolverModule;
-  try {
-    resolver = await importPackage("@powerformer/vela-cli");
-  } catch (error) {
-    if (requireBundled) {
+  if (requireBundled) {
+    if (importError != null) {
       throw strictResolutionError(
         "unable to resolve bundled Vela CLI: package @powerformer/vela-cli is unavailable",
-        error,
+        importError,
       );
     }
-    return null;
-  }
-
-  if (typeof resolver.resolveVelaCliBin !== "function") {
-    if (requireBundled) {
+    if (resolver == null || typeof resolver.resolveVelaCliBin !== "function") {
       throw strictResolutionError(
         "unable to resolve bundled Vela CLI: @powerformer/vela-cli must export resolveVelaCliBin",
       );
     }
-    return null;
-  }
-
-  const resolved = await resolver.resolveVelaCliBin({ strict: requireBundled });
-  if (typeof resolved === "string") {
-    const normalized = resolved.trim();
-    if (normalized.length > 0) return normalized;
-  }
-  if (resolved && typeof resolved === "object" && typeof resolved.path === "string") {
-    const normalized = resolved.path.trim();
-    if (normalized.length > 0) return normalized;
-  }
-  if (requireBundled) {
     throw strictResolutionError(
       "unable to resolve bundled Vela CLI: @powerformer/vela-cli returned no binary path",
     );

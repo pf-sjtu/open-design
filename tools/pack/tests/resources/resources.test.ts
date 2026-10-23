@@ -577,6 +577,9 @@ describe("copyOptionalVelaCliBinary", () => {
         platform,
         requireBundled: true,
         resourceRoot,
+        // Packaging always passes the payload target; on win32-arm64 that is
+        // what enables the x64 emulation fallback.
+        targetArch: process.platform === "win32" ? process.arch : undefined,
       });
 
       const target = join(resourceRoot, "bin", process.platform === "win32" ? "vela.exe" : "vela");

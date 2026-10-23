@@ -641,7 +641,14 @@ function installDesktopMenu(
   };
 }
 
-const REGISTER_DESKTOP_AUTH_TIMEOUT_MS = 800;
+// The desktop-auth handshake is a single sidecar round-trip, but it runs while
+// the daemon may still be booting (plugins, sqlite, agent detection) and on
+// Windows ARM64 those first seconds are noticeably slower. 800ms produced
+// spurious "desktop auth handshake with the daemon failed; please retry"
+// toasts on the very first folder pick; 5s plus one immediate retry keeps the
+// failure honest (a genuinely dead daemon still fails) without blaming the user.
+const REGISTER_DESKTOP_AUTH_TIMEOUT_MS = 5_000;
+const REGISTER_DESKTOP_AUTH_ATTEMPTS = 2;
 
 function summarizeDesktopIpcInput(input: unknown): Record<string, unknown> | null {
   if (input == null || typeof input !== "object") return null;
@@ -1235,17 +1242,29 @@ if (isDirectEntry()) {
             }
           },
           registerDesktopAuth: async (secret) => {
-            try {
-              const result = await client.invoke<RegisterDesktopAuthResult>(
-                APP_KEYS.DAEMON,
-                SIDECAR_MESSAGES.REGISTER_DESKTOP_AUTH,
-                { secret: secret.toString("base64") },
-                { timeoutMs: REGISTER_DESKTOP_AUTH_TIMEOUT_MS },
-              );
-              return result.accepted === true;
-            } catch {
-              return false;
+            let lastError: unknown = null;
+            for (let attempt = 1; attempt <= REGISTER_DESKTOP_AUTH_ATTEMPTS; attempt += 1) {
+              try {
+                const result = await client.invoke<RegisterDesktopAuthResult>(
+                  APP_KEYS.DAEMON,
+                  SIDECAR_MESSAGES.REGISTER_DESKTOP_AUTH,
+                  { secret: secret.toString("base64") },
+                  { timeoutMs: REGISTER_DESKTOP_AUTH_TIMEOUT_MS },
+                );
+                if (result.accepted === true) return true;
+                lastError = new Error(`daemon rejected desktop auth (attempt ${attempt})`);
+              } catch (error) {
+                lastError = error;
+              }
             }
+            // A silent `false` is what surfaces to the user as "please retry",
+            // so leave a line in the desktop log for the next report.
+            console.warn(
+              "[open-design desktop] desktop-auth handshake failed after "
+              + `${REGISTER_DESKTOP_AUTH_ATTEMPTS} attempt(s): `
+              + (lastError instanceof Error ? lastError.message : String(lastError)),
+            );
+            return false;
           },
         });
         runtimeHandle = started;

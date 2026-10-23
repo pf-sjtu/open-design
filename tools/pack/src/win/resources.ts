@@ -16,6 +16,7 @@ const RESOURCE_TREE_CACHE_SCHEMA_VERSION = 7;
 async function createResourceTreeCacheKey(config: ToolPackConfig, workspaceBuildKey: string): Promise<string> {
   const velaCliBin = await resolveOptionalVelaCliBinary({
     requireBundled: config.requireVelaCli,
+    targetArch: config.targetArch,
   });
   const velaOpenCodeCompanion =
     velaCliBin == null
@@ -83,6 +84,7 @@ export async function prepareResourceTree(
         platform: "win",
         requireBundled: config.requireVelaCli,
         resourceRoot,
+        targetArch: config.targetArch,
       }).then((copied) => {
         // Vela publishes no win32-arm64 package. Report the consequence at build
         // time instead of letting it surface as a login error in the packaged app.

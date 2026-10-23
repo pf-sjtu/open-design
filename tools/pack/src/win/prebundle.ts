@@ -44,7 +44,7 @@ export const WIN_STANDALONE_PREBUNDLE_EXCLUDED_INTERNAL_PACKAGES = [
 
 export const WIN_PREBUNDLE_POLICIES = {
   packagedMain: {
-    externals: ["@open-design/sidecar", "electron"],
+    externals: ["@open-design/sidecar", "electron", "fsevents"],
     forbiddenInputs: [
       "/apps/web/",
       "/node_modules/@open-design/web/",
@@ -56,7 +56,7 @@ export const WIN_PREBUNDLE_POLICIES = {
     label: "packaged main",
   },
   daemonCli: {
-    externals: ["@ffmpeg-installer/ffmpeg", "@open-design/sidecar", "better-sqlite3", "blake3-wasm", "hyperframes", "gsap", "node-pty"],
+    externals: ["@ffmpeg-installer/ffmpeg", "@open-design/sidecar", "better-sqlite3", "blake3-wasm", "fsevents", "hyperframes", "gsap", "node-pty"],
     forbiddenInputs: [
       "/node_modules/@open-design/daemon/",
       "/node_modules/@ffmpeg-installer/ffmpeg/",
@@ -74,7 +74,7 @@ export const WIN_PREBUNDLE_POLICIES = {
     label: "daemon cli",
   },
   daemonSidecar: {
-    externals: ["@ffmpeg-installer/ffmpeg", "@open-design/sidecar", "better-sqlite3", "blake3-wasm", "hyperframes", "gsap", "node-pty"],
+    externals: ["@ffmpeg-installer/ffmpeg", "@open-design/sidecar", "better-sqlite3", "blake3-wasm", "fsevents", "hyperframes", "gsap", "node-pty"],
     forbiddenInputs: [
       "/node_modules/@open-design/daemon/",
       "/node_modules/@ffmpeg-installer/ffmpeg/",
@@ -92,7 +92,7 @@ export const WIN_PREBUNDLE_POLICIES = {
     label: "daemon sidecar",
   },
   webSidecar: {
-    externals: ["@open-design/sidecar"],
+    externals: ["@open-design/sidecar", "fsevents"],
     forbiddenInputs: [
       "/node_modules/next/",
       "/node_modules/openai/",
