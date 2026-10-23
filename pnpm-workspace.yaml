@@ -26,3 +26,17 @@ onlyBuiltDependencies:
   - onnxruntime-node
   - protobufjs
   - sharp
+
+# Cross-architecture packaging: `tools-pack win build --arch <arch>` must be able
+# to assemble a payload for an architecture other than the build host (this fork
+# builds Windows ARM64 on an ARM64 host and keeps win-x64 working). Without this,
+# pnpm installs only the host arch's optional variants and packaging then fails
+# on a missing `@img/sharp-win32-<arch>` / `@next/swc-win32-<arch>` tree.
+supportedArchitectures:
+  os:
+    - win32
+    - darwin
+    - linux
+  cpu:
+    - arm64
+    - x64

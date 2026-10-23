@@ -82,7 +82,9 @@ export function parseCodexDebugModels(stdout: string): RuntimeModelOption[] | nu
       additional_speed_tiers?: unknown;
       service_tiers?: unknown;
     };
-    if (entry.visibility === 'hidden') continue;
+    // Codex marks unlisted models with `visibility: "hide"` (older builds used
+    // "hidden"); everything else ("list", absent) is user-selectable.
+    if (typeof entry.visibility === 'string' && /^hid(?:den|e)$/iu.test(entry.visibility.trim())) continue;
     const id =
       typeof entry.slug === 'string'
         ? entry.slug.trim()
@@ -290,23 +292,29 @@ export const codexAgentDef = {
       args: ['login', 'status'],
       timeoutMs: 5000,
     },
+    // Offline hint only: `listModels` reads the installed CLI's own catalogue
+    // (`codex debug models`). This list mirrors the visible models reported by
+    // codex-cli 0.163.0 so the picker is still useful when detection fails.
     fallbackModels: [
       DEFAULT_MODEL_OPTION,
       {
-        id: 'gpt-5.5',
-        label: 'gpt-5.5',
+        id: 'gpt-6-astra',
+        label: 'GPT-6-Astra',
         additionalSpeedTiers: ['fast'],
         serviceTierOptions: GPT_5_5_SERVICE_TIER_OPTIONS,
       },
-      { id: 'gpt-5.4', label: 'gpt-5.4' },
-      { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
-      { id: 'gpt-5.3-codex', label: 'gpt-5.3-codex' },
-      { id: 'gpt-5.1', label: 'gpt-5.1' },
-      { id: 'gpt-5.1-codex-mini', label: 'gpt-5.1-codex-mini' },
-      { id: 'gpt-5-codex', label: 'gpt-5-codex' },
-      { id: 'gpt-5', label: 'gpt-5' },
-      { id: 'o3', label: 'o3' },
-      { id: 'o4-mini', label: 'o4-mini' },
+      { id: 'gpt-6.1-sol', label: 'GPT-6.1-Sol' },
+      { id: 'gpt-6-sol', label: 'GPT-6-Sol' },
+      { id: 'gpt-6-luna', label: 'GPT-6-Luna' },
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol' },
+      { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra' },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna' },
+      {
+        id: 'gpt-5.5',
+        label: 'GPT-5.5',
+        additionalSpeedTiers: ['fast'],
+        serviceTierOptions: GPT_5_5_SERVICE_TIER_OPTIONS,
+      },
     ],
     reasoningOptions: [
       { id: 'default', label: 'Default' },
@@ -316,6 +324,10 @@ export const codexAgentDef = {
       { id: 'medium', label: 'Medium' },
       { id: 'high', label: 'High' },
       { id: 'xhigh', label: 'XHigh' },
+      // Codex 0.163+ lists these for frontier models; older builds reject them,
+      // so they stay opt-in per model through the live catalogue.
+      { id: 'max', label: 'Max' },
+      { id: 'ultra', label: 'Ultra' },
     ],
     // Prompt is delivered via stdin pipe (gated by `promptViaStdin: true`
     // below) to avoid Windows `spawn ENAMETOOLONG` while keeping Codex on

@@ -54,21 +54,67 @@ export function encodeAntigravityStdinPrompt(prompt: string): string {
 //                         "Gemini 3.1 Pro (High)", "Claude Sonnet 4.6
 //                         (Thinking)"). We persist it before spawn.
 //
-// `supportsCustomModel: false` because the label set is a server-side
-// enum — a typed id agy doesn't recognise resolves to a silent
-// `availableModels` cache miss + empty headless output, which surfaces
-// to the user as a generic "empty response" error.
+// `supportsCustomModel: true` now that agy exposes `--model` (>= 1.4): a typed
+// id rides the spawn instead of a global settings.json write, and the daemon
+// only accepts ids that are either in the live `agy models` catalogue or
+// syntactically valid custom ids (`sanitizeCustomModel`).
 //
-// The 8 model labels mirror what `Switch Model` in agy's TUI lists for
-// consumer-tier accounts as of 2026-05-28. The set is small and stable
-// enough to ship statically until upstream adds a programmatic
-// `agy models` subcommand (also tracked under issue #35).
+// The model catalogue used to be a hardcoded list mirrored from the TUI
+// (`agy` 1.0.x had no way to enumerate it), which is why it drifted out of date
+// — by 1.4.4 the shipped labels named models the account no longer had. agy now
+// has `agy models`, so `listModels` below reads the live catalogue and
+// `ANTIGRAVITY_FALLBACK_MODELS` is only the offline hint.
 const ANTIGRAVITY_SETTINGS_PATH = join(
   homedir(),
   '.gemini',
   'antigravity-cli',
   'settings.json',
 );
+
+// `agy models` (agy >= 1.4) prints one `id<TAB>Display Label` row per model
+// after a `Fetching available models...` preamble. The ids are what `--model`
+// takes; the labels are what the TUI picker and the legacy settings.json path
+// expect.
+export function parseAntigravityModels(
+  stdout: string,
+): Array<{ id: string; label: string }> | null {
+  const rows: Array<{ id: string; label: string }> = [];
+  const seen = new Set<string>();
+  for (const rawLine of String(stdout ?? '').split('\n')) {
+    const line = rawLine.replace(/\r$/u, '').trimEnd();
+    if (line.trim().length === 0) continue;
+    if (/^fetching available models/i.test(line.trim())) continue;
+    const tabIndex = line.indexOf('\t');
+    if (tabIndex <= 0) continue;
+    const id = line.slice(0, tabIndex).trim();
+    const label = line.slice(tabIndex + 1).trim() || id;
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    rows.push({ id, label });
+  }
+  return rows.length > 0 ? rows : null;
+}
+
+// id -> display label for the models the current CLI reported. Legacy agy
+// builds (no `--model` flag) need the label in settings.json, but the picker
+// may have handed us an id from the live list.
+const antigravityModelLabels = new Map<string, string>();
+
+export function rememberAntigravityModelLabels(
+  models: ReadonlyArray<{ id: string; label: string }>,
+): void {
+  for (const model of models) antigravityModelLabels.set(model.id, model.label);
+}
+
+export function resolveAntigravityModelLabel(
+  model: string,
+  fallbackModels: ReadonlyArray<{ id: string; label: string }> = [],
+): string {
+  const remembered = antigravityModelLabels.get(model);
+  if (remembered != null) return remembered;
+  const fallback = fallbackModels.find((option) => option.id === model);
+  return fallback?.label ?? model;
+}
 
 export function writeAntigravityModelSelection(
   label: string,
@@ -191,6 +237,25 @@ export async function waitForAgyToReadModel(
   return false;
 }
 
+// The 13 model labels below mirror `agy models` for consumer-tier accounts as
+// of 2026-10-23 (agy 1.4.4). They are only a fallback: `listModels` runs
+// `agy models` and the picker uses that live list whenever the CLI answers.
+const ANTIGRAVITY_FALLBACK_MODELS = [
+  { id: 'Gemini 4 Argon (Medium)', label: 'Gemini 4 Argon (Medium)' },
+  { id: 'Gemini 4 Argon (High)', label: 'Gemini 4 Argon (High)' },
+  { id: 'Gemini 4 Argon (Low)', label: 'Gemini 4 Argon (Low)' },
+  { id: 'Gemini 3.8 Flash (High)', label: 'Gemini 3.8 Flash (High)' },
+  { id: 'Gemini 3.8 Flash (Medium)', label: 'Gemini 3.8 Flash (Medium)' },
+  { id: 'Gemini 3.8 Flash (Low)', label: 'Gemini 3.8 Flash (Low)' },
+  { id: 'Claude Opus 5.5 (High)', label: 'Claude Opus 5.5 (High)' },
+  { id: 'Claude Opus 5.5 (Medium)', label: 'Claude Opus 5.5 (Medium)' },
+  { id: 'Claude Opus 5.5 (Low)', label: 'Claude Opus 5.5 (Low)' },
+  { id: 'Claude Sonnet 5.5 (High)', label: 'Claude Sonnet 5.5 (High)' },
+  { id: 'Claude Sonnet 5.5 (Medium)', label: 'Claude Sonnet 5.5 (Medium)' },
+  { id: 'Claude Sonnet 5.5 (Low)', label: 'Claude Sonnet 5.5 (Low)' },
+  { id: 'GPT-OSS 120B (Medium)', label: 'GPT-OSS 120B (Medium)' },
+] as const;
+
 export const antigravityAgentDef = {
   id: 'antigravity',
   name: 'Antigravity',
@@ -199,22 +264,27 @@ export const antigravityAgentDef = {
   helpArgs: ['--help'],
   capabilityFlags: {
     [ANTIGRAVITY_SKIP_PERMISSIONS_FLAG]: 'skipPermissions',
+    // agy >= 1.4 accepts `--model <id>` (upstream issue #35 is fixed). Prefer it
+    // over the settings.json write: it is per-spawn, so concurrent runs can pick
+    // different models without the global-file lock.
+    '--model': 'model',
   },
-  fallbackModels: [
-    DEFAULT_MODEL_OPTION,
-    { id: 'Gemini 3.1 Pro (High)', label: 'Gemini 3.1 Pro (High)' },
-    { id: 'Gemini 3.1 Pro (Low)', label: 'Gemini 3.1 Pro (Low)' },
-    { id: 'Gemini 3.5 Flash (High)', label: 'Gemini 3.5 Flash (High)' },
-    { id: 'Gemini 3.5 Flash (Medium)', label: 'Gemini 3.5 Flash (Medium)' },
-    { id: 'Gemini 3.5 Flash (Low)', label: 'Gemini 3.5 Flash (Low)' },
-    {
-      id: 'Claude Sonnet 4.6 (Thinking)',
-      label: 'Claude Sonnet 4.6 (Thinking)',
+  // `agy models` lists the account's live catalogue (`id<TAB>label`). Only
+  // agy >= 1.4 has the subcommand; older builds fail here and fall through to
+  // `fallbackModels`.
+  listModels: {
+    args: ['models'],
+    parse: (stdout) => {
+      const models = parseAntigravityModels(stdout);
+      // Remember id -> label so the legacy settings.json path can still write
+      // the label the TUI picker expects.
+      if (models != null) rememberAntigravityModelLabels(models);
+      return models;
     },
-    { id: 'Claude Opus 4.6 (Thinking)', label: 'Claude Opus 4.6 (Thinking)' },
-    { id: 'GPT-OSS 120B (Medium)', label: 'GPT-OSS 120B (Medium)' },
-  ],
-  supportsCustomModel: false,
+    timeoutMs: 20_000,
+  },
+  fallbackModels: [DEFAULT_MODEL_OPTION, ...ANTIGRAVITY_FALLBACK_MODELS],
+  supportsCustomModel: true,
   // We deliberately do NOT opt into `resumesSessionViaCli` / agy's `-c`
   // resume flag on follow-up turns. Tested both shapes; `-c` activates
   // agy's internal agentic loop (multi-step model retries, tool calls,
@@ -236,22 +306,32 @@ export const antigravityAgentDef = {
     options = {},
     runtimeContext = {},
   ) => {
-    if (options.model && options.model !== DEFAULT_MODEL_OPTION.id) {
-      writeAntigravityModelSelection(
-        options.model,
-        runtimeContext.antigravitySettingsPath,
-      );
-    }
+    const explicitModel =
+      options.model && options.model !== DEFAULT_MODEL_OPTION.id
+        ? options.model
+        : null;
     const args: string[] = [];
-    // Always opt into `--log-file` when the daemon supplied a path: the
-    // model lock in server.ts waits for agy to log the settings.json model
-    // override there, and the connection test folds its tail into auth /
-    // quota classification.
+    // Always opt into `--log-file` when the daemon supplied a path: the model
+    // lock in server.ts waits for agy to log the settings.json model override
+    // there, and the connection test folds its tail into auth / quota
+    // classification.
     //
     // Flag order is load-bearing on agy: put `--log-file` first so
     // diagnostics (model override / auth / quota) land in the log.
     if (runtimeContext.agentLogFilePath) {
       args.push('--log-file', runtimeContext.agentLogFilePath);
+    }
+    // Modern agy routes the model per spawn; legacy builds only read it from
+    // the global settings.json, which the daemon rewrites before each run.
+    if (explicitModel != null) {
+      if (agentCapabilities.get('antigravity')?.model) {
+        args.push('--model', explicitModel);
+      } else {
+        writeAntigravityModelSelection(
+          resolveAntigravityModelLabel(explicitModel, ANTIGRAVITY_FALLBACK_MODELS),
+          runtimeContext.antigravitySettingsPath,
+        );
+      }
     }
     // Daemon-managed headless runs have no interactive approval channel.
     if (agentCapabilities.get('antigravity')?.skipPermissions) {

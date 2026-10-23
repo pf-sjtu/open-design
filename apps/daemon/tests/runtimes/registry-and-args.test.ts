@@ -331,23 +331,23 @@ test('codex args keep plugins enabled when OD_CODEX_DISABLE_PLUGINS is not 1', (
 });
 
 test('codex model picker includes current OpenAI choices in priority order', async () => {
+  // Mirrors the visible catalogue of codex-cli 0.163.0; `listModels` reads the
+  // live list at runtime, so this is only the offline hint.
   const expectedModels = [
     'default',
+    'gpt-6-astra',
+    'gpt-6.1-sol',
+    'gpt-6-sol',
+    'gpt-6-luna',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
     'gpt-5.5',
-    'gpt-5.4',
-    'gpt-5.4-mini',
-    'gpt-5.3-codex',
-    'gpt-5.1',
-    'gpt-5.1-codex-mini',
-    'gpt-5-codex',
-    'gpt-5',
-    'o3',
-    'o4-mini',
   ];
 
   assert.deepEqual(codex.fallbackModels.map((m) => m.id), expectedModels);
   assert.deepEqual(
-    codex.fallbackModels.find((m) => m.id === 'gpt-5.5')?.serviceTierOptions,
+    codex.fallbackModels.find((m) => m.id === 'gpt-6-astra')?.serviceTierOptions,
     [{ id: 'priority', label: 'Fast' }],
   );
   assert.ok(codex.reasoningOptions, 'codex must define reasoningOptions');
@@ -359,6 +359,8 @@ test('codex model picker includes current OpenAI choices in priority order', asy
     'medium',
     'high',
     'xhigh',
+    'max',
+    'ultra',
   ]);
 
   const args = codex.buildArgs(
@@ -811,11 +813,15 @@ exit 2
   }
 });
 
-test('codex picker includes gpt-5.1 model family', () => {
+test('codex picker includes the current model family', () => {
   const pickerModels = new Set(codex.fallbackModels.map((model) => model.id));
 
-  assert.equal(pickerModels.has('gpt-5.1'), true);
-  assert.equal(pickerModels.has('gpt-5.1-codex-mini'), true);
+  assert.equal(pickerModels.has('gpt-6-astra'), true);
+  assert.equal(pickerModels.has('gpt-6.1-sol'), true);
+  assert.equal(pickerModels.has('gpt-5.6-luna'), true);
+  // Superseded families must not linger in the picker.
+  assert.equal(pickerModels.has('gpt-5.1-codex-mini'), false);
+  assert.equal(pickerModels.has('o4-mini'), false);
 });
 
 test('cursor-agent parses live model ids separately from display labels', () => {

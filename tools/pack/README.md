@@ -298,3 +298,21 @@ commit to assess the warm-cache tradeoff, and compare equivalent runner images,
 artifact targets and signing modes. A single run is observational evidence,
 not a stable percentage saving. `publish=false` also skips PostHog sourcemap
 upload, so its total duration is not directly comparable with a publishing run.
+
+## Model detection for agent CLIs
+
+Agent model pickers read the installed CLI's own catalogue instead of a
+hardcoded list wherever the CLI can enumerate it (`listModels` / `fetchModels`
+on the agent definition). `fallbackModels` is only the offline hint.
+
+| Agent | Detection | Notes |
+| --- | --- | --- |
+| Codex CLI | `codex debug models` | honours `visibility: hide`; reasoning levels incl. `max`/`ultra` |
+| Antigravity | `agy models` | ids feed `--model` on agy >= 1.4; older builds get the label via settings.json |
+| AMR / Vela | `vela models` | ACP `session/set_model` |
+| Claude, Cursor Agent, Kimi, Kiro, Qwen, Devin, Hermes, Kilo, Trae, Vibe, Pi, Reasonix, DeepSeek Harness, Codebuddy, OpenCode | CLI subcommand | see each `defs/*.ts` `listModels` |
+| Amp, Qoder | — | the picker selects an agent mode, not a model |
+| Aider, AtomCode, Copilot, MiMo, BYOK OpenCode | static hint | CLI has no stable enumeration |
+
+Custom model ids are accepted by default (`supportsCustomModel` undefined/true);
+only adapters whose CLI has no model argument set it to `false`.

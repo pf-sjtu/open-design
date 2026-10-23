@@ -237,12 +237,12 @@ export type RuntimeAgentDef = {
   installUrl?: string;
   docsUrl?: string;
   // When `false`, the Settings model picker hides the "Custom (fill below)"
-  // option and the associated free-text input. Use this for agents whose
-  // CLI does not actually accept a model id (e.g. `agy` v1.0.3 has no
-  // `--model` flag yet — upstream issue #35 — and the model is chosen
-  // server-side; AMR routes model selection through ACP's
-  // `session/set_model` and rejects free-form ids). Defaults to allowing
-  // custom input (undefined === true) so most adapters keep today's UX.
+  // option and the associated free-text input. Only set this to `false` when
+  // the CLI has no model selector at all (Amp's picker chooses an agent *mode*;
+  // the DeepSeek harness profile takes no model argument). Both `agy` (with
+  // `--model`) and AMR (ACP `session/set_model` + `vela models`) allow custom
+  // ids again, and the daemon still validates them against the live catalogue.
+  // Defaults to allowing custom input (undefined === true).
   supportsCustomModel?: boolean;
   // When `true`, the daemon trusts this adapter's CLI to carry its own
   // multi-turn conversation memory across spawn invocations (today only

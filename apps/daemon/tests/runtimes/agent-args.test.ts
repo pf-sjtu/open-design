@@ -681,24 +681,45 @@ test('antigravity runs headless stream-json with the prompt as one agy user mess
     message: { content: 'write hello world' },
   });
 
-  // The model is chosen through agy's settings.json (see below), never
-  // through argv. Pass a temp antigravitySettingsPath so buildArgs does not
-  // touch the real ~/.gemini/antigravity-cli/settings.json in a unit test.
+  // Model selection has two shapes. On agy >= 1.4 (which advertises `--model`
+  // in --help) the choice rides argv per spawn; on legacy builds it is written
+  // into agy's settings.json. Cover both, and keep the legacy write pointed at a
+  // temp antigravitySettingsPath so the test never touches the real
+  // ~/.gemini/antigravity-cli/settings.json.
   const settingsDir = mkdtempSync(join(tmpdir(), 'od-agy-argv-'));
   try {
+    agentCapabilities.set('antigravity', { model: true, skipPermissions: false });
     const withModel = antigravity.buildArgs('hi', [], [], {
-      model: 'Gemini 3.1 Pro (High)',
+      model: 'gemini-4-argon-high',
     }, {
       agentLogFilePath: '/tmp/od-agy-test.log',
       antigravitySettingsPath: join(settingsDir, 'settings.json'),
     });
-    assert.equal(withModel.includes('--model'), false);
     assert.deepEqual(withModel, [
+      '--log-file',
+      '/tmp/od-agy-test.log',
+      '--model',
+      'gemini-4-argon-high',
+      ...AGY_STREAM_JSON_ARGS,
+    ]);
+
+    agentCapabilities.set('antigravity', { model: false, skipPermissions: false });
+    const legacyWithModel = antigravity.buildArgs('hi', [], [], {
+      model: 'Gemini 4 Argon (High)',
+    }, {
+      agentLogFilePath: '/tmp/od-agy-test.log',
+      antigravitySettingsPath: join(settingsDir, 'settings.json'),
+    });
+    assert.equal(legacyWithModel.includes('--model'), false);
+    assert.deepEqual(legacyWithModel, [
       '--log-file',
       '/tmp/od-agy-test.log',
       ...AGY_STREAM_JSON_ARGS,
     ]);
+    const written = JSON.parse(readFileSync(join(settingsDir, 'settings.json'), 'utf8')) as { model?: string };
+    assert.equal(written.model, 'Gemini 4 Argon (High)');
   } finally {
+    agentCapabilities.delete('antigravity');
     rmSync(settingsDir, { recursive: true, force: true });
   }
 
@@ -720,31 +741,33 @@ test('antigravity runs headless stream-json with the prompt as one agy user mess
   // The prompt never rides argv, so no argv budget applies.
   assert.equal(antigravity.maxPromptArgBytes, undefined);
 
-  // Picker exposes the synthetic Default + the 8 labels agy's TUI
-  // Switch-Model surfaces for consumer-tier accounts. The set is small
-  // enough to ship statically; revisit when upstream adds an `agy
-  // models` subcommand (also tracked under issue #35).
+  // Picker exposes the synthetic Default plus agy's live catalogue, with the
+  // static hint list kept in sync with `agy models` (agy 1.4.4).
   assert.deepEqual(
     antigravity.fallbackModels.map((m) => m.id),
     [
       'default',
-      'Gemini 3.1 Pro (High)',
-      'Gemini 3.1 Pro (Low)',
-      'Gemini 3.5 Flash (High)',
-      'Gemini 3.5 Flash (Medium)',
-      'Gemini 3.5 Flash (Low)',
-      'Claude Sonnet 4.6 (Thinking)',
-      'Claude Opus 4.6 (Thinking)',
+      'Gemini 4 Argon (Medium)',
+      'Gemini 4 Argon (High)',
+      'Gemini 4 Argon (Low)',
+      'Gemini 3.8 Flash (High)',
+      'Gemini 3.8 Flash (Medium)',
+      'Gemini 3.8 Flash (Low)',
+      'Claude Opus 5.5 (High)',
+      'Claude Opus 5.5 (Medium)',
+      'Claude Opus 5.5 (Low)',
+      'Claude Sonnet 5.5 (High)',
+      'Claude Sonnet 5.5 (Medium)',
+      'Claude Sonnet 5.5 (Low)',
       'GPT-OSS 120B (Medium)',
     ],
   );
 
-  // `agy` v1.0.3 has no `--model` flag (upstream #35), no `models`
-  // subcommand, and no `/model` slash command — a user-typed model id
-  // would be silently ignored at spawn, looking like an OD bug. The
-  // settings UI hides the "Custom (fill below)" option when this is
-  // `false`. Remove this opt-out once upstream wires #35.
-  assert.equal(antigravity.supportsCustomModel, false);
+  // agy >= 1.4 ships `--model` (upstream #35) and `agy models`, so the
+  // settings UI offers custom ids again and the picker reads the live
+  // catalogue. Older builds still receive the label through settings.json.
+  assert.equal(antigravity.supportsCustomModel, true);
+  assert.deepEqual(antigravity.listModels?.args, ['models']);
 });
 
 // OPEND-3495: on Windows the composed OD prompt (system prompt + skills +
@@ -782,6 +805,7 @@ test('antigravity gates non-interactive permission bypass on the detected CLI ca
   assert.deepEqual(antigravity.helpArgs, ['--help']);
   assert.deepEqual(antigravity.capabilityFlags, {
     '--dangerously-skip-permissions': 'skipPermissions',
+    '--model': 'model',
   });
   assert.deepEqual(antigravity.buildArgs('', [], [], {}), AGY_STREAM_JSON_ARGS);
 
@@ -889,16 +913,13 @@ test('antigravity persists model selection to agy settings.json', () => {
   }
 });
 
-// AMR routes model selection through ACP `session/set_model` and only
-// accepts ids that survive the live `vela models` preflight, so a free
-// text id silently fails at spawn. Same custom-model opt-out shape as
-// antigravity — the declarative `supportsCustomModel: false` on the
-// def is the single source of truth the settings UI consults, and the
-// fallback "Custom" item should not appear in the model picker.
-test('amr opts out of the Custom-model picker option', () => {
+// AMR routes model selection through ACP `session/set_model` and the picker
+// reads the live `vela models` catalogue; custom ids are allowed so a user can
+// name a model the CLI reports before the next detection pass.
+test('amr allows the Custom-model picker option', () => {
   const amr = AGENT_DEFS.find((a) => a.id === 'amr');
   assert.ok(amr, 'amr def must remain registered');
-  assert.equal(amr.supportsCustomModel, false);
+  assert.equal(amr.supportsCustomModel, true);
 });
 
 test('kiro fetchModels falls back to fallbackModels when detection fails', async () => {

@@ -684,11 +684,12 @@ export const amrAgentDef = {
   // captures the durable handle, skips the transcript resend on resume, and
   // maps vela's resume_failed onto the reseed path. See resumesSessionViaAcpLoad.
   resumesSessionViaAcpLoad: true,
-  // Vela routes model selection through ACP's `session/set_model` and only
-  // accepts ids that survived the `vela models` preflight check, so a
-  // free-text "Custom" id silently fails at spawn. The model picker
-  // surfaces the live Vela catalog instead.
-  supportsCustomModel: false,
+  // Vela routes model selection through ACP's `session/set_model`, and the
+  // picker surfaces the live `vela models` catalogue. Custom ids are allowed:
+  // the daemon rejects anything that is not in that catalogue unless it is a
+  // syntactically valid id, so a user can pre-empt a model the CLI reports
+  // before the next detection pass.
+  supportsCustomModel: true,
   supportsImagePaths: true,
   // Daemon-process env override for emergency operator pinning when no model
   // was selected. Explicit UI selections, including `default`, win.
