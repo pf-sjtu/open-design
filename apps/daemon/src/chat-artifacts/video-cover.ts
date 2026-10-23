@@ -37,7 +37,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import { resolveFfmpegPath } from '../media/ffmpeg-binary.js';
 
 import type { ChatArtifactFailureCode } from './types.js';
 
@@ -86,7 +86,7 @@ export type FreezeVideoFrameOutcome =
 export const extractVideoFirstFrameWithFfmpeg: ChatArtifactVideoFrameExtractor = (input) =>
   new Promise<void>((resolve, reject) => {
     const child = spawn(
-      ffmpegInstaller.path,
+      resolveFfmpegPath(),
       [
         '-y',
         '-nostdin',

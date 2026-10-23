@@ -34,6 +34,7 @@ function resolveToolPackRoot(startDir: string): string {
 export const WORKSPACE_ROOT = resolve(resolveToolPackRoot(__dirname), "../..");
 
 export type ToolPackPlatform = "mac" | "win" | "linux";
+export type ToolPackTargetArch = "arm64" | "x64";
 export type ToolPackBuildOutput = "all" | "app" | "appimage" | "dir" | "dmg" | "nsis" | "zip";
 export type ToolPackMacCompression = "store" | "normal" | "maximum";
 export type ToolPackWebOutputMode = "server" | "standalone";
@@ -42,6 +43,7 @@ export type ToolPackVelaWebUrls = Partial<Record<ToolPackAmrProfile, string>>;
 
 export type ToolPackCliOptions = {
   appVersion?: string;
+  arch?: string;
   cacheDir?: string;
   containerized?: boolean;
   dir?: string;
@@ -105,6 +107,8 @@ export type ToolPackConfig = {
   roots: ToolPackRoots;
   silent: boolean;
   signed: boolean;
+  /** Target CPU architecture of the packaged payload (never the build host arch). */
+  targetArch: ToolPackTargetArch;
   amrProfile?: ToolPackAmrProfile;
   telemetryRelayUrl?: string;
   /**
@@ -180,14 +184,27 @@ function resolveToolPackBuildOutput(platform: ToolPackPlatform, value: string | 
   throw new Error(`unsupported ${platform} --to target: ${value}`);
 }
 
-function resolveToolPackMacCompression(value: string | undefined): ToolPackMacCompression {
-  if (value == null || value.length === 0) return "normal";
+function resolveToolPackMacCompression(value: string | undefined): ToolPackMacCompression {  if (value == null || value.length === 0) return "normal";
   if (value === "store" || value === "normal" || value === "maximum") return value;
   throw new Error(`unsupported mac --mac-compression value: ${value}`);
 }
 
-function resolveToolPackAppVersion(value: string | undefined): string | undefined {
-  if (value == null) return undefined;
+function resolveToolPackTargetArch(platform: ToolPackPlatform, value: string | undefined): ToolPackTargetArch {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized == null || normalized.length === 0) {
+    // Keep the historical default per platform: Windows has always shipped
+    // x64, macOS builds the host architecture, Linux stays x64.
+    if (platform === "mac") return process.arch === "arm64" ? "arm64" : "x64";
+    return "x64";
+  }
+  const allowed = platform === "linux" ? ["x64"] : ["arm64", "x64"];
+  if (!allowed.includes(normalized)) {
+    throw new Error(`unsupported ${platform} --arch value: ${value} (expected ${allowed.join("|")})`);
+  }
+  return normalized as ToolPackTargetArch;
+}
+
+function resolveToolPackAppVersion(value: string | undefined): string | undefined {  if (value == null) return undefined;
   const normalized = value.trim();
   if (normalized.length === 0) throw new Error("--app-version must not be empty");
   if (/\s/.test(normalized)) throw new Error(`--app-version must not contain whitespace: ${value}`);
@@ -433,6 +450,7 @@ export function resolveToolPackConfig(
     requireVelaCli: options.requireVelaCli === true,
     silent: options.silent !== false,
     signed: options.signed === true,
+    targetArch: resolveToolPackTargetArch(platform, options.arch),
     amrProfile: resolveToolPackAmrProfile(process.env.OPEN_DESIGN_AMR_PROFILE),
     telemetryRelayUrl: resolveToolPackTelemetryRelayUrl(process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL),
     updateMetadataUrl: resolveToolPackUpdateMetadataUrl(process.env.OD_UPDATE_METADATA_URL),

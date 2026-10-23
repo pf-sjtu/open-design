@@ -59,7 +59,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { Agent as UndiciAgent } from 'undici';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import { resolveFfmpegPath } from './ffmpeg-binary.js';
 import { load as loadHtml } from 'cheerio';
 import { SETTINGS_MEDIA_PROVIDERS_PATH } from '@open-design/contracts';
 import {
@@ -4150,7 +4150,7 @@ function encodeHyperFramesMp4(
   audioTracks: HyperFramesAudioTrack[] = [],
   duration = 0,
 ): Promise<void> {
-  const ffmpegPath = process.env.HYPERFRAMES_FFMPEG_PATH?.trim() || ffmpegInstaller.path;
+  const ffmpegPath = resolveFfmpegPath();
   return new Promise<void>((resolve, reject) => {
     const child = spawn(
       ffmpegPath,

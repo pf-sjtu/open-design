@@ -90,6 +90,80 @@ Packaged runtime state is namespace-scoped under `.tmp/tools-pack/runtime/win/na
 `--to dir` may point `built-app.json` at an immutable cached `win-unpacked` executable while keeping
 namespace-local config and runtime paths outside that cache entry.
 
+## Target architecture (`--arch`)
+
+Windows and macOS packages accept `--arch arm64|x64`; Linux stays x64. The flag
+selects the CPU architecture of the *packaged payload*, never the build host, and
+it threads through every step that used to hardcode `x64`:
+
+- electron-builder's `win.target[].arch`
+- `@electron/rebuild`'s `arch` (better-sqlite3 ABI rebuild)
+- the node-pty prebuild the packager validates and ships
+  (`prebuilds/win32-<arch>`, see `src/node-pty-runtime.ts`)
+- the `@img/sharp-libvips-win32-<arch>` size-report paths
+- the web-standalone after-pack hook (`targetArch` in its config JSON)
+- the payload cache key, so x64 and arm64 caches never mix
+
+Default stays `x64` on Windows, so existing commands and artifact names are
+byte-identical. arm64 artifacts get an `-arm64` suffix
+(`Open Design-<namespace>-arm64-setup.exe`, `…-arm64-portable.zip`) so both
+architectures can live in the same output namespace.
+
+```bash
+tools-pack win build --arch arm64 --to all
+```
+
+## Local-first dependency resolution
+
+Everything the pipeline would download can be supplied by the environment
+first. A *set but unusable* value fails the build instead of silently falling
+back to a download. Resolution lives in `src/local-deps.ts`.
+
+| Dependency | Env | Consumed by | Unset behaviour |
+| --- | --- | --- | --- |
+| Electron (install) | `ELECTRON_CACHE`, `ELECTRON_MIRROR`, `ELECTRON_OVERRIDE_DIST_PATH` | `@electron/get` during `pnpm install` | downloads from the mirror |
+| Electron (packaging) | `OD_ELECTRON_DIST` → electron-builder `electronDist` | `src/win/builder.ts` | electron-builder downloads the zip (honours `ELECTRON_CACHE`/`ELECTRON_MIRROR`) |
+| electron-builder toolchain | `ELECTRON_BUILDER_CACHE`, `npm_config_electron_builder_binaries_mirror` | electron-builder, `src/win/nsis.ts`, `src/win/custom-installer.ts` | downloads NSIS/winCodeSign |
+| better-sqlite3 | `OD_BETTER_SQLITE3_PREBUILD`, `npm_config_better_sqlite3_binary_host_mirror` | `@electron/rebuild` in `src/win/app.ts` | prebuild-install download or source build |
+| ffmpeg | `OD_FFMPEG_BIN`, `HYPERFRAMES_FFMPEG_PATH`, `PATH` | daemon media pipeline | bundled `@ffmpeg-installer/ffmpeg` |
+| Node runtime | `OD_NODE_BIN` | daemon CLI / agent subprocesses at runtime | Electron's own node (`ELECTRON_RUN_AS_NODE`) or `resources/open-design/bin/node` |
+| Vela CLI | `OPEN_DESIGN_VELA_CLI_BIN` | `src/vela-cli.ts` | `@powerformer/vela-cli` if installed, otherwise omitted |
+
+`OD_BETTER_SQLITE3_PREBUILD` must match the target Electron ABI (145 for
+Electron 41); an `win32-x64` path is rejected when `--arch arm64` is set. The
+build log prints every dependency that was resolved locally.
+
+### Windows ARM64: what is native, what is emulated
+
+Windows 11 on ARM runs x64 binaries under emulation, so "no arm64 build exists"
+is not automatically fatal. Every `win build` therefore ends with a **runtime
+architecture audit** (`src/runtime-arch-audit.ts`): it reads the PE header of
+every `.node`/`.exe`/`.dll` in the payload and classifies it as
+
+- `native` — matches `--arch`;
+- `emulated` — x64 inside an arm64 payload, allowed only for an explicit
+  allowlist (vendored `7z.exe`, node-pty's unused `third_party`, other-arch
+  `onnxruntime` trees, the always-32-bit NSIS uninstaller);
+- `other-platform` — prebuilds for darwin/linux kept by the dependency itself;
+- `foreign` — cannot run on the target. **The build fails here.**
+
+The audit also fails when a required arm64 component is absent
+(`better-sqlite3`, `node-pty/prebuilds/win32-<arch>`, `@img/sharp-win32-<arch>`),
+so a silently-missing arm64 build cannot ship.
+
+Known emulated-on-arm64 pieces:
+
+| Component | Why |
+| --- | --- |
+| `7z.exe` / `7z.dll` | vendored 7-Zip has no arm64 build; installer-only |
+| `@powerformer/vela-cli` | no `win32-arm64` package; supply `OPEN_DESIGN_VELA_CLI_BIN` to bundle the x64 CLI (runs under emulation) or set `VELA_BIN` at runtime |
+| `onnxruntime-node` x64 tree | arm64 tree ships beside it and is selected at load |
+| NSIS uninstaller | NSIS emits a 32-bit stub for every architecture |
+
+When no Vela CLI can be resolved for an arm64 payload the build prints an
+explicit warning instead of letting login fail later with
+`vela binary not found`.
+
 ## Linux
 
 Local lifecycle commands:

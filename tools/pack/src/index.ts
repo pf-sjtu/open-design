@@ -88,6 +88,7 @@ const TO_HELP_BY_PLATFORM: Record<ToolPackPlatform, string> = {
 function addBuildOptions(command: CacCommand, platform: ToolPackPlatform) {
   return command
     .option("--app-version <version>", "override packaged app version for release artifacts")
+    .option("--arch <arch>", "target CPU architecture of the packaged payload: arm64|x64 (win/mac; linux is x64 only)")
     .option("--portable", "do not bake local tools-pack runtime roots into the packaged config")
     .option("--require-vela-cli", "fail packaging when the bundled Vela CLI cannot be resolved")
     .option("--signed", "build a signed mac artifact")
@@ -102,6 +103,7 @@ function addMacBuildOptions(command: CacCommand) {
 
 function addWinLifecycleOptions(command: CacCommand) {
   return command
+    .option("--arch <arch>", "target CPU architecture of the installed payload: arm64|x64 (default: x64)")
     .option("--expected-version <version>", "validate-payload: expected launcher payload version")
     .option("--payload-path <path>", "validate-payload: launcher payload archive path")
     .option("--remove-cache", "remove packaged download/cache data during uninstall/reset/cleanup")

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { load } from 'cheerio';
 import { execFile } from 'node:child_process';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import { resolveFfmpegPath } from '../media/ffmpeg-binary.js';
 import { isMotionVideoComposition } from '@open-design/contracts/runtime/motion-source-player';
 import { prepareHyperFramesAudio } from '../media/hyperframes-audio.js';
 
@@ -73,7 +73,7 @@ export async function assertMotionExport(videoFile: string, spec: MotionExportSp
     await handle.close();
   }
   await new Promise<void>((resolve, reject) => {
-    execFile(process.env.HYPERFRAMES_FFMPEG_PATH?.trim() || ffmpegInstaller.path,
+    execFile(resolveFfmpegPath(),
       ['-v', 'error', '-i', videoFile, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-'],
       { timeout: 30_000, maxBuffer: 128 * 1024 }, error => {
         if (error) reject(new Error('Motion MP4 has no decodable video frame.'));
@@ -87,7 +87,7 @@ export async function assertMotionExport(videoFile: string, spec: MotionExportSp
 
 function hasAudibleTrack(file: string): Promise<boolean> {
   return new Promise(resolve => {
-    execFile(process.env.HYPERFRAMES_FFMPEG_PATH?.trim() || ffmpegInstaller.path,
+    execFile(resolveFfmpegPath(),
       ['-hide_banner', '-i', file, '-map', '0:a:0', '-af', 'volumedetect', '-f', 'null', '-'],
       { timeout: 30_000, maxBuffer: 128 * 1024 }, (error, _stdout, stderr) => {
         const peak = /max_volume:\s*(-?[\d.]+) dB/.exec(stderr);

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { load } from 'cheerio';
-import ffmpeg from '@ffmpeg-installer/ffmpeg';
+import { resolveFfmpegPath } from '../media/ffmpeg-binary.js';
 import type { MotionArtifactPreview } from '@open-design/contracts';
 import type { ChatArtifactCaptureDeps } from './capture.js';
 import { attachChatArtifactThumbnail } from './run-capture.js';
@@ -56,7 +56,7 @@ async function inside(root: string, relative: string): Promise<string> {
 
 /** Validate the real stream, not just the HTML's declared dimensions/clock. */
 async function verifyVideo(file: string, spec: MotionArtifactPreview): Promise<void> {
-  const { stderr } = await exec(ffmpeg.path, ['-nostdin', '-hide_banner', '-i', file, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-'], { timeout: 10000, maxBuffer: 128 * 1024 });
+  const { stderr } = await exec(resolveFfmpegPath(), ['-nostdin', '-hide_banner', '-i', file, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-'], { timeout: 10000, maxBuffer: 128 * 1024 });
   const clock = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(stderr);
   const size = /Video:[^\n]*?\b(\d{1,5})x(\d{1,5})\b/.exec(stderr);
   const duration = clock ? Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]) : NaN;

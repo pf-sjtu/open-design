@@ -18,6 +18,7 @@ function createConfig(root: string, portable: boolean): ToolPackConfig {
     containerized: false,
     electronBuilderCliPath: "/unused/electron-builder",
     electronDistPath: "/unused/electron",
+    targetArch: "x64",
     electronVersion: "0.0.0",
     macCompression: "normal",
     namespace: "test-namespace",

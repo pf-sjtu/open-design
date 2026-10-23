@@ -132,8 +132,8 @@ export async function packWin(config: ToolPackConfig): Promise<WinPackResult> {
       if (builtApp == null) throw new Error("cannot build Windows launcher payload without a built app manifest");
       const packagedVersion = await readPackagedVersion(config);
       return builtApp.unpackedRoot === paths.unpackedRoot
-        ? materializeCachedUnpackedForInstaller(paths, packagedVersion)
-        : materializeCachedUnpackedForInstaller(builtApp.unpackedRoot, paths, packagedVersion);
+        ? materializeCachedUnpackedForInstaller(paths, packagedVersion, config.targetArch)
+        : materializeCachedUnpackedForInstaller(builtApp.unpackedRoot, paths, packagedVersion, config.targetArch);
     });
     await runPhase("payload-artifact", async () => {
       if (builtApp == null) throw new Error("cannot build Windows launcher payload without a built app manifest");

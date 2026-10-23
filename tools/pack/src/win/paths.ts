@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { ToolPackConfig } from "../config/index.js";
+import type { ToolPackConfig, ToolPackTargetArch } from "../config/index.js";
 import {
   WIN_PREBUNDLE_ENTRYPOINTS_DIR_NAME,
   WIN_PREBUNDLE_META_DIR_NAME,
@@ -20,8 +20,23 @@ export function sanitizeNamespace(value: string): string {
   return value.replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 
+/**
+ * electron-builder names the x64 output `win-unpacked` and every other
+ * architecture `win-<arch>-unpacked` (see app-builder-lib's
+ * `computeAppOutDir`). Every tools-pack path that points into the builder
+ * output must follow that naming, otherwise the arm64 checks look into a
+ * directory electron-builder never created.
+ */
+export function winUnpackedDirName(arch: ToolPackTargetArch): string {
+  return arch === "x64" ? "win-unpacked" : `win-${arch}-unpacked`;
+}
+
 export function resolveWinPaths(config: ToolPackConfig): WinPaths {
   const namespaceToken = sanitizeNamespace(config.namespace);
+  // Artifact names stay byte-identical for x64; arm64 gets a suffix so the two
+  // architectures never overwrite each other in the same output namespace.
+  const archToken = config.targetArch === "x64" ? "" : `-${config.targetArch}`;
+  const unpackedDirName = winUnpackedDirName(config.targetArch);
   const namespaceRoot = config.roots.output.namespaceRoot;
   const installDir = join(config.roots.runtime.namespaceRoot, "install", PRODUCT_NAME);
   const identity = resolveWinInstallIdentity(config);
@@ -32,7 +47,7 @@ export function resolveWinPaths(config: ToolPackConfig): WinPaths {
     assembledMainEntryPath: join(namespaceRoot, "assembled", "app", "main.cjs"),
     assembledPackageJsonPath: join(namespaceRoot, "assembled", "app", "package.json"),
     assembledPrebundledRoot: join(namespaceRoot, "assembled", "app", WIN_PREBUNDLED_APP_DIR_NAME),
-    blockmapPath: join(namespaceRoot, "builder", `${PRODUCT_NAME}-${namespaceToken}-setup.exe.blockmap`),
+    blockmapPath: join(namespaceRoot, "builder", `${PRODUCT_NAME}-${namespaceToken}${archToken}-setup.exe.blockmap`),
     builtManifestPath: join(namespaceRoot, "built-app.json"),
     daemonCliPrebundleEntrypointPath: join(namespaceRoot, WIN_PREBUNDLE_ENTRYPOINTS_DIR_NAME, "daemon-cli.js"),
     daemonCliPrebundlePath: join(namespaceRoot, "assembled", WIN_PREBUNDLED_DAEMON_CLI_RELATIVE_PATH),
@@ -57,8 +72,8 @@ export function resolveWinPaths(config: ToolPackConfig): WinPaths {
     packagedMainPrebundleMetaPath: join(namespaceRoot, WIN_PREBUNDLE_META_DIR_NAME, "packaged-main.meta.json"),
     packagedMainPrebundlePath: join(namespaceRoot, "assembled", WIN_PREBUNDLED_PACKAGED_MAIN_RELATIVE_PATH),
     resourceRoot: join(namespaceRoot, "resources", "open-design"),
-    setupPath: join(namespaceRoot, "builder", `${PRODUCT_NAME}-${namespaceToken}-setup.exe`),
-    setupZipPath: join(namespaceRoot, "builder", `${PRODUCT_NAME}-${namespaceToken}-portable.zip`),
+    setupPath: join(namespaceRoot, "builder", `${PRODUCT_NAME}-${namespaceToken}${archToken}-setup.exe`),
+    setupZipPath: join(namespaceRoot, "builder", `${PRODUCT_NAME}-${namespaceToken}${archToken}-portable.zip`),
     startMenuShortcutPath: join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "Microsoft", "Windows", "Start Menu", "Programs", identity.shortcutName),
     tarballsRoot: join(namespaceRoot, "tarballs"),
     userDesktopShortcutPath: join(homedir(), "Desktop", identity.shortcutName),
@@ -70,8 +85,8 @@ export function resolveWinPaths(config: ToolPackConfig): WinPaths {
     webSidecarPrebundleMetaPath: join(namespaceRoot, WIN_PREBUNDLE_META_DIR_NAME, "web-sidecar.meta.json"),
     webSidecarPrebundlePath: join(namespaceRoot, "assembled", WIN_PREBUNDLED_WEB_SIDECAR_RELATIVE_PATH),
     winIconPath: join(namespaceRoot, "resources", "win", "icon.ico"),
-    unpackedExePath: join(namespaceRoot, "builder", "win-unpacked", `${PRODUCT_NAME}.exe`),
-    unpackedRoot: join(namespaceRoot, "builder", "win-unpacked"),
+    unpackedExePath: join(namespaceRoot, "builder", unpackedDirName, `${PRODUCT_NAME}.exe`),
+    unpackedRoot: join(namespaceRoot, "builder", unpackedDirName),
   };
 }
 

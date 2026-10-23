@@ -85,6 +85,22 @@ describe("resolveToolPackConfig win build target", () => {
   });
 });
 
+describe("resolveToolPackConfig target arch", () => {
+  it("defaults windows to x64 and keeps macOS on the host architecture", () => {
+    expect(resolveToolPackConfig("win").targetArch).toBe("x64");
+    expect(resolveToolPackConfig("win", { arch: "x64" }).targetArch).toBe("x64");
+    expect(resolveToolPackConfig("mac").targetArch).toBe(process.arch === "arm64" ? "arm64" : "x64");
+  });
+
+  it("accepts arm64 for win and mac, and rejects it for linux", () => {
+    expect(resolveToolPackConfig("win", { arch: "arm64" }).targetArch).toBe("arm64");
+    expect(resolveToolPackConfig("win", { arch: "ARM64" }).targetArch).toBe("arm64");
+    expect(resolveToolPackConfig("mac", { arch: "arm64" }).targetArch).toBe("arm64");
+    expect(() => resolveToolPackConfig("linux", { arch: "arm64" })).toThrow(/unsupported linux --arch value: arm64/);
+    expect(() => resolveToolPackConfig("win", { arch: "ia32" })).toThrow(/unsupported win --arch value: ia32/);
+  });
+});
+
 describe("resolveToolPackConfig cache root", () => {
   it("keeps the default cache outside custom tools-pack roots", () => {
     const config = resolveToolPackConfig("win", {

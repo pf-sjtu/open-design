@@ -61,6 +61,25 @@ This file is the single source of truth for agents entering this repository. Rea
 - `better-sqlite3` has no prebuilt binary for win32/Node 24; `pnpm install` will compile it from source via node-gyp (~2 min). Requires Visual Studio Build Tools 2022 or newer. This is expected — not a sign of version incompatibility.
 - For `tools-dev` start/stop/status usage, see "Local lifecycle" below.
 
+### Windows ARM64
+
+This fork builds a native Windows ARM64 desktop package. Pass `--arch arm64` to
+`tools-pack win build` (and to `win install`/`start`/`logs`/`inspect`, which read
+the same namespace layout). Default stays `x64`, so nothing changes for the
+upstream matrix.
+
+- Native arm64 exist for electron, better-sqlite3 (ABI 145), node-pty
+  (including `conpty/conpty.dll` + `conpty/OpenConsole.exe`), onnxruntime-node,
+  sharp, and esbuild.
+- No arm64 build exists for `@powerformer/vela-cli` or
+  `@ffmpeg-installer/ffmpeg`. Both are handled by the local-first layer: set
+  `OPEN_DESIGN_VELA_CLI_BIN` / `OD_FFMPEG_BIN` (or put ffmpeg on `PATH`) and the
+  x64 equivalents run under Windows ARM emulation.
+- `tools-pack` audits every packaged payload's PE architecture and fails on a
+  `foreign` binary; see `tools/pack/README.md` for the classification.
+- `tools-dev` (developer loop) is unaffected: it runs on the host `node`, which
+  is already arm64.
+
 ## Local lifecycle
 
 - Use `pnpm tools-dev` as the only local development lifecycle entry point.

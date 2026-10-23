@@ -116,7 +116,7 @@ export async function collectWinSizeReport(
         join(copiedStandaloneNodeModulesRoot, ".pnpm", "node_modules", "next"),
       ),
       copiedStandaloneSharpLibvipsBytes: sizeIndex.sizePathBytes(
-        join(copiedStandaloneNodeModulesRoot, "@img", "sharp-libvips-win32-x64"),
+        join(copiedStandaloneNodeModulesRoot, "@img", `sharp-libvips-win32-${config.targetArch}`),
       ),
       copiedStandaloneSourcemapBytes: sizeIndex.sizePathBytes(copiedStandaloneRoot, {
         includeFile: (path) => path.endsWith(".map"),
@@ -131,7 +131,7 @@ export async function collectWinSizeReport(
       nextBytes: sizeIndex.sizePathBytes(join(appNodeModulesRoot, "next")),
       nextSwcBytes: sizeIndex.sumChildDirectorySizes(join(appNodeModulesRoot, "@next"), (name) => name.startsWith("swc-win32-")),
       prebundledRuntimeBytes: sizeIndex.sizePathBytes(join(appResourcesRoot, "app", WIN_PREBUNDLED_APP_DIR_NAME)),
-      sharpLibvipsBytes: sizeIndex.sizePathBytes(join(appNodeModulesRoot, "@img", "sharp-libvips-win32-x64")),
+      sharpLibvipsBytes: sizeIndex.sizePathBytes(join(appNodeModulesRoot, "@img", `sharp-libvips-win32-${config.targetArch}`)),
       sourcemapBytes: sizeIndex.sizePathBytes(unpackedRoot, { includeFile: (path) => path.endsWith(".map") }),
       tsbuildInfoBytes: sizeIndex.sizePathBytes(unpackedRoot, { includeFile: (path) => path.endsWith(".tsbuildinfo") }),
       webCopiedStandaloneBytes: sizeIndex.sizePathBytes(copiedStandaloneRoot),

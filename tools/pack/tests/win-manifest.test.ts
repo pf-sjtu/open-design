@@ -18,6 +18,7 @@ function makeConfig(overrides: Partial<ToolPackConfig> = {}): ToolPackConfig {
     containerized: false,
     electronBuilderCliPath: "/unused",
     electronDistPath: "/unused",
+    targetArch: "x64",
     electronVersion: "0.0.0",
     macCompression: "normal",
     namespace: "test-namespace",

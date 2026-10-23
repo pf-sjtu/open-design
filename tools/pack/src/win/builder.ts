@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { hashJson, hashPath, type CacheNode, ToolPackCache } from "../cache/index.js";
-import type { ToolPackConfig } from "../config/index.js";
+import type { ToolPackConfig, ToolPackTargetArch } from "../config/index.js";
+import { describeLocalDependencies, resolveLocalElectronDist } from "../local-deps.js";
 import { domToPptxBundleResource } from "../dom-to-pptx-resource.js";
 import {
   assertNodePtyRuntime,
@@ -39,6 +40,8 @@ import {
   WEB_STANDALONE_RESOURCE_NAME,
 } from "./constants.js";
 import { pathExists, removeTree } from "./fs.js";
+import { winUnpackedDirName } from "./paths.js";
+import { auditPayloadArchitecture, formatArchAuditReport } from "../runtime-arch-audit.js";
 import {
   readPackagedVersion,
   writeBuiltAppManifest,
@@ -71,7 +74,7 @@ import type {
 
 const execFileAsync = promisify(execFile);
 const WIN_ARCHIVE_CACHE_VERSION = 3;
-const WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION = 9;
+const WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION = 10;
 const WIN_NSIS_BASE_PAYLOAD_INPUT_HASH_CACHE_VERSION = 2;
 
 async function hashWinNsisInstallerImplementation(config: ToolPackConfig): Promise<string> {
@@ -124,6 +127,7 @@ async function writeWebStandaloneHookConfig(
         requireRootWebPackageAudit: !shouldUseWinStandalonePrebundle(config.webOutputMode),
         resourceName: WEB_STANDALONE_RESOURCE_NAME,
         standaloneSourceRoot: join(webRoot, ".next", "standalone"),
+        targetArch: config.targetArch,
         version: 1,
         webPublicSourceRoot: join(webRoot, "public"),
         webStaticSourceRoot: join(webRoot, ".next", "static"),
@@ -167,6 +171,16 @@ async function runElectronBuilderRaw(
   };
 
   const namespaceToken = sanitizeNamespace(config.namespace);
+  const archToken = config.targetArch === "x64" ? "" : `-${config.targetArch}`;
+  // Local-first: an extracted Electron supplied through OD_ELECTRON_DIST is
+  // handed to electron-builder as `electronDist`, which skips its download.
+  // Unset keeps the historical "let electron-builder download it" path.
+  const localElectronDist = resolveLocalElectronDist(process.env, "win32");
+  for (const resolution of describeLocalDependencies(process.env, { arch: config.targetArch, platform: "win32" })) {
+    if (resolution.path != null) {
+      process.stderr.write(`[tools-pack] local ${resolution.kind} from ${resolution.source}: ${resolution.path}\n`);
+    }
+  }
   const packagedVersion = await runSegment("electron-builder-raw:read-packaged-version", async () =>
     readPackagedVersion(config)
   );
@@ -190,6 +204,7 @@ async function runElectronBuilderRaw(
     // already relies on electron-builder's own download and is the only
     // platform that stayed green through this regression.
     electronVersion: config.electronVersion,
+    ...(localElectronDist == null ? {} : { electronDist: localElectronDist }),
     executableName: PRODUCT_NAME,
     extraMetadata: {
       main: "./main.cjs",
@@ -212,7 +227,7 @@ async function runElectronBuilderRaw(
     nsis: {
       allowElevation: false,
       allowToChangeInstallationDirectory: true,
-      artifactName: `${PRODUCT_NAME}-${namespaceToken}-setup.\${ext}`,
+      artifactName: `${PRODUCT_NAME}-${namespaceToken}${archToken}-setup.\${ext}`,
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
       deleteAppDataOnUninstall: false,
@@ -229,9 +244,9 @@ async function runElectronBuilderRaw(
     productName: PRODUCT_NAME,
     publish: [{ provider: "generic", url: "https://updates.invalid/open-design" }],
     win: {
-      artifactName: `${PRODUCT_NAME}-${namespaceToken}.\${ext}`,
+      artifactName: `${PRODUCT_NAME}-${namespaceToken}${archToken}.\${ext}`,
       icon: paths.winIconPath,
-      target: resolveElectronBuilderWinTargets(config.to).map((target) => ({ arch: ["x64"], target })),
+      target: resolveElectronBuilderWinTargets(config.to).map((target) => ({ arch: [config.targetArch], target })),
     },
   };
 
@@ -247,6 +262,12 @@ async function runElectronBuilderRaw(
       await execFileAsync(process.execPath, [
         config.electronBuilderCliPath,
         "--win",
+        // electron-builder derives the target arch from the CLI flag (and from it
+        // decides which platform-specific node_modules to keep). The config's
+        // `win.target[].arch` alone is not enough: with a locally supplied
+        // `electronDist` it fell back to the host arch and pruned the arm64
+        // node-pty prebuilds.
+        `--${config.targetArch}`,
         "--projectDir",
         projectDir,
         "--config",
@@ -430,18 +451,21 @@ function winUnpackedAppRoot(unpackedRoot: string): string {
   return join(unpackedRoot, "resources", "app");
 }
 
-async function validateWinUnpackedNodePtyRuntime(unpackedRoot: string): Promise<string | null> {
+async function validateWinUnpackedNodePtyRuntime(
+  unpackedRoot: string,
+  arch: ToolPackTargetArch,
+): Promise<string | null> {
   return validateNodePtyRuntime({
     appRoot: winUnpackedAppRoot(unpackedRoot),
-    arch: "x64",
+    arch,
     platform: "win32",
   });
 }
 
-async function assertWinUnpackedNodePtyRuntime(unpackedRoot: string): Promise<void> {
+async function assertWinUnpackedNodePtyRuntime(unpackedRoot: string, arch: ToolPackTargetArch): Promise<void> {
   await assertNodePtyRuntime({
     appRoot: winUnpackedAppRoot(unpackedRoot),
-    arch: "x64",
+    arch,
     platform: "win32",
   });
 }
@@ -450,25 +474,31 @@ export async function materializeCachedUnpackedForInstaller(
   sourceUnpackedRoot: string,
   paths: WinPaths,
   packagedVersion?: string,
+  arch?: ToolPackTargetArch,
 ): Promise<WinBuiltAppManifest>;
 export async function materializeCachedUnpackedForInstaller(
   paths: WinPaths,
   packagedVersion?: string,
+  arch?: ToolPackTargetArch,
 ): Promise<WinBuiltAppManifest>;
 export async function materializeCachedUnpackedForInstaller(
   sourceUnpackedRootOrPaths: string | WinPaths,
   pathsOrPackagedVersion?: WinPaths | string,
-  maybePackagedVersion?: string,
+  maybePackagedVersion?: string | ToolPackTargetArch,
+  maybeArch?: ToolPackTargetArch,
 ): Promise<WinBuiltAppManifest> {
   const sourceUnpackedRoot = typeof sourceUnpackedRootOrPaths === "string" ? sourceUnpackedRootOrPaths : null;
   const paths = typeof sourceUnpackedRootOrPaths === "string"
     ? pathsOrPackagedVersion as WinPaths
     : sourceUnpackedRootOrPaths;
   const packagedVersion = typeof sourceUnpackedRootOrPaths === "string"
-    ? maybePackagedVersion
+    ? (typeof maybePackagedVersion === "string" ? maybePackagedVersion : undefined)
     : typeof pathsOrPackagedVersion === "string"
       ? pathsOrPackagedVersion
       : undefined;
+  const arch: ToolPackTargetArch = (typeof sourceUnpackedRootOrPaths === "string"
+    ? maybeArch
+    : (typeof maybePackagedVersion === "string" ? undefined : maybePackagedVersion)) ?? "x64";
   if (sourceUnpackedRoot != null) {
     await removeTree(paths.unpackedRoot);
     await mkdir(dirname(paths.unpackedRoot), { recursive: true });
@@ -484,7 +514,7 @@ export async function materializeCachedUnpackedForInstaller(
     await rewriteWinExecutableVersion(paths.unpackedExePath, packagedVersion);
     await assertMaterializedUnpackedVersionConsistency(paths.unpackedRoot, packagedVersion);
   }
-  await assertWinUnpackedNodePtyRuntime(paths.unpackedRoot);
+  await assertWinUnpackedNodePtyRuntime(paths.unpackedRoot, arch);
   return {
     appBuilderOutputRoot: paths.appBuilderOutputRoot,
     cacheEntryPath: null,
@@ -543,11 +573,15 @@ export async function runElectronBuilder(
   const winIcon = await hashPath(winResources.icon);
   const electronBuilderKeyInput = {
     afterPackHook,
+    arch: config.targetArch,
     cacheVersion: WIN_ELECTRON_BUILDER_DIR_CACHE_VERSION,
     domToPptxBundle,
     asar: ELECTRON_BUILDER_ASAR,
     buildDependenciesFromSource: ELECTRON_BUILDER_BUILD_DEPENDENCIES_FROM_SOURCE,
     electronBuilderCliPath: config.electronBuilderCliPath,
+    // A locally supplied Electron dist changes the packaged bytes, so it has to
+    // participate in the cache key (CACHE.md R1).
+    electronDistPath: resolveLocalElectronDist(process.env, "win32"),
     electronVersion: config.electronVersion,
     nodeGypRebuild: ELECTRON_BUILDER_NODE_GYP_REBUILD,
     npmRebuild: ELECTRON_BUILDER_NPM_REBUILD,
@@ -582,10 +616,11 @@ export async function runElectronBuilder(
     outputs: ["builder", ...(config.webOutputMode === "standalone" ? [auditOutput] : [])],
     invalidate: async ({ entryRoot }: { entryRoot: string }) => {
       const validationError = await validateWinUnpackedNodePtyRuntime(
-        join(entryRoot, "builder", "win-unpacked"),
+        join(entryRoot, "builder", winUnpackedDirName(config.targetArch)),
+        config.targetArch,
       );
       if (validationError != null) return { reason: validationError };
-      try { await assertSidecarRuntime(join(entryRoot, "builder", "win-unpacked")); }
+      try { await assertSidecarRuntime(join(entryRoot, "builder", winUnpackedDirName(config.targetArch))); }
       catch (error) { return { reason: String(error) }; }
       return null;
     },
@@ -596,8 +631,8 @@ export async function runElectronBuilder(
         { ...createCacheLocalWinPaths(paths, entryRoot), resourceRoot: resourceTree.resourceRoot },
         packagedAppRoot,
       );
-      await assertWinUnpackedNodePtyRuntime(join(entryRoot, "builder", "win-unpacked"));
-      await assertSidecarRuntime(join(entryRoot, "builder", "win-unpacked"));
+      await assertWinUnpackedNodePtyRuntime(join(entryRoot, "builder", winUnpackedDirName(config.targetArch)), config.targetArch);
+      await assertSidecarRuntime(join(entryRoot, "builder", winUnpackedDirName(config.targetArch)));
       return { packagedAppKey, packagedVersion };
     },
   };
@@ -622,8 +657,8 @@ export async function runElectronBuilder(
                 packagedAppRoot,
               );
               segments.push(...rawSegments);
-              await assertWinUnpackedNodePtyRuntime(join(entryRoot, "builder", "win-unpacked"));
-              await assertSidecarRuntime(join(entryRoot, "builder", "win-unpacked"));
+              await assertWinUnpackedNodePtyRuntime(join(entryRoot, "builder", winUnpackedDirName(config.targetArch)), config.targetArch);
+              await assertSidecarRuntime(join(entryRoot, "builder", winUnpackedDirName(config.targetArch)));
             });
             return { packagedAppKey, packagedVersion };
           },
@@ -633,11 +668,21 @@ export async function runElectronBuilder(
   }
 
   const cachedBuilderRoot = join(manifest.entryPath, "builder");
-  const cachedUnpackedRoot = join(cachedBuilderRoot, "win-unpacked");
+  const cachedUnpackedRoot = join(cachedBuilderRoot, winUnpackedDirName(config.targetArch));
   const cachedExecutablePath = join(cachedUnpackedRoot, `${PRODUCT_NAME}.exe`);
   await runSegment("electron-builder-dir:validate-node-pty-runtime", async () => {
-    await assertWinUnpackedNodePtyRuntime(cachedUnpackedRoot);
+    await assertWinUnpackedNodePtyRuntime(cachedUnpackedRoot, config.targetArch);
     await assertSidecarRuntime(cachedUnpackedRoot);
+  });
+  await runSegment("electron-builder-dir:runtime-arch-audit", async () => {
+    const report = await auditPayloadArchitecture(cachedUnpackedRoot, config.targetArch);
+    process.stderr.write(`${formatArchAuditReport(report)}\n`);
+    if (report.failures.length > 0) {
+      throw new Error(
+        `packaged payload does not match the ${config.targetArch} target architecture `
+        + `(${report.failures.length} problem(s); see the runtime architecture audit above)`,
+      );
+    }
   });
   await runSegment("electron-builder-dir:prepare-namespace", async () => {
     if (shouldBuildWinNsisInstaller(config.to) || shouldBuildWinPortableZip(config.to)) {
@@ -839,7 +884,7 @@ export async function runElectronBuilder(
     const materialized = await runSegment("installer:materialize-unpacked", async () => {
       const materializedManifest = await cache.readHit({
         materialize: [{
-          from: "builder/win-unpacked",
+          from: `builder/${winUnpackedDirName(config.targetArch)}`,
           reuse: true,
           reuseRequiredPaths: [
             ...resolveWinNsisOverlayRequiredPaths(),
@@ -885,6 +930,10 @@ export async function runElectronBuilder(
             namespace: config.namespace,
             packagedAppKey,
             packagedVersion,
+            // The zip embeds `resources/open-design` (skills, plugins, the
+            // bundled Vela CLI, 7-Zip). Without this the zip stayed a cache hit
+            // while the installer picked up newly bundled resources.
+            resourceTreeKey: resourceTree.key,
             signing: signingCacheKey,
             target: "portable-zip",
           }),

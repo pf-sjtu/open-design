@@ -8,7 +8,8 @@ import { rebuild } from "@electron/rebuild";
 import { createCommandInvocation, createPackageManagerInvocation } from "@open-design/platform";
 
 import { hashJson, hashPath, ToolPackCache } from "../cache/index.js";
-import type { ToolPackConfig } from "../config/index.js";
+import type { ToolPackConfig, ToolPackTargetArch } from "../config/index.js";
+import { resolveLocalBetterSqlite3Prebuild, resolveLocalFfmpegBin } from "../local-deps.js";
 import {
   prepareNodePtyRuntime,
   validateNodePtyRuntime,
@@ -79,9 +80,19 @@ async function runEsbuild(config: ToolPackConfig, args: string[]): Promise<void>
 }
 
 async function runElectronRebuild(config: ToolPackConfig, appRoot: string): Promise<void> {
+  // Local-first: a prebuilt addon supplied through the environment skips
+  // @electron/rebuild (and therefore its prebuild-install download).
+  const localPrebuild = resolveLocalBetterSqlite3Prebuild(process.env, config.targetArch);
+  if (localPrebuild != null) {
+    const target = nativeRebuildOutputPath(appRoot);
+    await mkdir(dirname(target), { recursive: true });
+    await cp(localPrebuild, target);
+    process.stderr.write(`[tools-pack] using local better-sqlite3 prebuild: ${localPrebuild}\n`);
+    return;
+  }
   const foundModules = new Set<string>();
   const rebuildResult = rebuild({
-    arch: "x64",
+    arch: config.targetArch,
     buildFromSource: ELECTRON_BUILDER_BUILD_DEPENDENCIES_FROM_SOURCE,
     buildPath: appRoot,
     electronVersion: config.electronVersion,
@@ -117,12 +128,12 @@ async function validateNativeRebuildOutput(appRoot: string): Promise<string | nu
   }
 }
 
-async function validateWinPackagedAppRuntime(appRoot: string): Promise<string | null> {
+async function validateWinPackagedAppRuntime(appRoot: string, arch: ToolPackTargetArch): Promise<string | null> {
   const nativeValidationError = await validateNativeRebuildOutput(appRoot);
   if (nativeValidationError != null) return nativeValidationError;
   return validateNodePtyRuntime({
     appRoot,
-    arch: "x64",
+    arch,
     platform: "win32",
   });
 }
@@ -223,8 +234,28 @@ function createAssembledAppDependencies(
   );
   return {
     ...internalDependencies,
-    ...(shouldUseWinStandalonePrebundle(config.webOutputMode) ? WIN_PREBUNDLE_RUNTIME_DEPENDENCIES : {}),
+    ...(shouldUseWinStandalonePrebundle(config.webOutputMode) ? winPrebundleRuntimeDependencies(config) : {}),
   };
+}
+
+/**
+ * Runtime dependencies bundled into the assembled app.
+ *
+ * Windows ARM64 has no `@ffmpeg-installer/ffmpeg` sub-package (the wrapper
+ * throws `Unsupported platform/architecture: win32-arm64` at require time), so
+ * when the environment supplies an arm64 ffmpeg — or one is on PATH — the x64
+ * installer is dropped: the payload stops shipping a binary it cannot run and
+ * stops declaring a dependency that would crash the daemon on load.
+ */
+export function winPrebundleRuntimeDependencies(
+  config: Pick<ToolPackConfig, "targetArch">,
+  env: NodeJS.ProcessEnv = process.env,
+): Readonly<Record<string, string>> {
+  const dependencies: Record<string, string> = { ...WIN_PREBUNDLE_RUNTIME_DEPENDENCIES };
+  if (config.targetArch === "arm64" && resolveLocalFfmpegBin(env, "win32").path != null) {
+    delete dependencies["@ffmpeg-installer/ffmpeg"];
+  }
+  return dependencies;
 }
 
 async function writeAssembledAppEntrypoints(
@@ -387,10 +418,10 @@ export async function createWinPackagedAppCacheKey(
   config: ToolPackConfig,
   tarballsKey: string,
   packedTarballs: PackedTarballInfo[],
-  runtimeDependencies: Readonly<Record<string, string>> = WIN_PREBUNDLE_RUNTIME_DEPENDENCIES,
+  runtimeDependencies: Readonly<Record<string, string>> = winPrebundleRuntimeDependencies(config),
 ): Promise<string> {
   return hashJson({
-    arch: "x64",
+    arch: config.targetArch,
     electronVersion: config.electronVersion,
     modules: ELECTRON_REBUILD_NATIVE_MODULES,
     node: "win.packaged-app",
@@ -420,7 +451,7 @@ export async function prepareWinPackagedApp(
     key,
     outputs: ["app"],
     invalidate: async ({ entryRoot }: { entryRoot: string }) => {
-      const nativeValidationError = await validateWinPackagedAppRuntime(join(entryRoot, "app"));
+      const nativeValidationError = await validateWinPackagedAppRuntime(join(entryRoot, "app"), config.targetArch);
       return nativeValidationError == null ? null : { reason: nativeValidationError };
     },
     build: async ({ entryRoot }: { entryRoot: string }): Promise<PackagedAppCacheMetadata> => {
@@ -439,12 +470,12 @@ export async function prepareWinPackagedApp(
       await runNpmInstall(appRoot);
       await prepareNodePtyRuntime({
         appRoot,
-        arch: "x64",
+        arch: config.targetArch,
         platform: "win32",
       });
       await runElectronRebuild(config, appRoot);
       await finalizeRuntimeManifest(appRoot);
-      const nativeValidationError = await validateWinPackagedAppRuntime(appRoot);
+      const nativeValidationError = await validateWinPackagedAppRuntime(appRoot, config.targetArch);
       if (nativeValidationError != null) throw new Error(nativeValidationError);
       return { packagedVersion };
     },

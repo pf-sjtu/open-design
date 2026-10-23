@@ -38,6 +38,13 @@ function optionalBoolean(record, key, fallback) {
   return value;
 }
 
+function optionalArch(record, key, fallback) {
+  const value = record[key];
+  if (value == null) return fallback;
+  if (value === "arm64" || value === "x64") return value;
+  throw new Error(`[tools-pack web-standalone] config.${key} must be arm64|x64: ${String(value)}`);
+}
+
 function requireAbsolutePath(record, key) {
   const value = requireString(record, key);
   if (!path.isAbsolute(value)) {
@@ -114,6 +121,7 @@ async function readHookConfig() {
     requireRootWebPackageAudit: optionalBoolean(raw, "requireRootWebPackageAudit", true),
     resourceName,
     standaloneSourceRoot,
+    targetArch: optionalArch(raw, "targetArch", undefined),
     webPublicSourceRoot,
     webStaticSourceRoot,
     workspaceRoot,
@@ -830,8 +838,8 @@ async function pruneRootSharp(appNodeModulesRoot) {
   return removedPaths;
 }
 
-function resolveHyperframesRuntimePackageNames(platformName) {
-  const arch = platformName === "win32" ? "x64" : process.arch;
+function resolveHyperframesRuntimePackageNames(platformName, targetArch) {
+  const arch = targetArch ?? (platformName === "win32" ? "x64" : process.arch);
   if (arch !== "arm64" && arch !== "x64") {
     throw new Error(`[tools-pack hyperframes] unsupported ${platformName} architecture: ${arch}`);
   }
@@ -860,7 +868,7 @@ function packagePath(nodeModulesRoot, packageName) {
 async function copyHyperframesRuntimeDependencies(config, appNodeModulesRoot, platformName) {
   const sourceNodeModulesRoot = path.join(config.hyperframesRuntimeSourceRoot, "node_modules");
   const copied = [];
-  for (const packageName of resolveHyperframesRuntimePackageNames(platformName)) {
+  for (const packageName of resolveHyperframesRuntimePackageNames(platformName, config.targetArch)) {
     const sourcePath = packagePath(sourceNodeModulesRoot, packageName);
     const destinationPath = packagePath(appNodeModulesRoot, packageName);
     await copyRequired(sourcePath, destinationPath, { dereference: true });

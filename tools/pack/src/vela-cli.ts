@@ -1,8 +1,20 @@
 import { execFile } from "node:child_process";
+import { statSync } from "node:fs";
 import { chmod, cp, mkdir, readFile, stat } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 
 export const VELA_CLI_BIN_ENV = "OPEN_DESIGN_VELA_CLI_BIN";
+
+/**
+ * Vela publishes no `win32-arm64` package. Windows 11 on ARM runs x64 binaries
+ * under emulation, so an arm64 payload falls back to the x64 CLI when it happens
+ * to be installed; `OPEN_DESIGN_VELA_CLI_BIN` is the supported way to supply a
+ * local copy explicitly.
+ */
+const EMULATED_VELA_CLI_PACKAGE_BY_PLATFORM: Partial<Record<string, string>> = {
+  "win32-arm64": "@powerformer/vela-cli-win32-x64",
+};
 const OPEN_CODE_COMPANION_RELATIVE_PATH = ["libexec", "opencode"] as const;
 const AUTHORIZED_PULL_HELP_ARGS = ["team-projects", "pull", "--help"] as const;
 // The daemon always invokes `pull <projectId> <stageDir> --live-dir …`
@@ -80,6 +92,23 @@ function strictResolutionError(message: string, cause?: unknown): Error {
 
 function targetBinaryName(platform: VelaCliPlatform): string {
   return platform === "win" ? "vela.exe" : "vela";
+}
+
+/** Resolve the x64 Vela package for architectures Vela does not publish. */
+export function resolveEmulatedVelaCliBinary(
+  platform: NodeJS.Platform = process.platform,
+  arch: NodeJS.Architecture = process.arch,
+): string | null {
+  const packageName = EMULATED_VELA_CLI_PACKAGE_BY_PLATFORM[`${platform}-${arch}`];
+  if (packageName == null) return null;
+  try {
+    const require = createRequire(import.meta.url);
+    const packageJsonPath = require.resolve(`${packageName}/package.json`);
+    const binary = join(dirname(packageJsonPath), "bin", targetBinaryName("win"));
+    return statSync(binary).isFile() ? binary : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function copyOptionalVelaCliBinary({
@@ -323,6 +352,16 @@ export async function resolveOptionalVelaCliBinary({
 } = {}): Promise<string | null> {
   const envSource = env[VELA_CLI_BIN_ENV]?.trim();
   if (envSource) return envSource;
+
+  // Vela has no win32-arm64 package: prefer the x64 CLI (runs under Windows ARM
+  // emulation) over silently dropping the binary from an arm64 payload.
+  const emulated = resolveEmulatedVelaCliBinary();
+  if (emulated != null) {
+    process.stderr.write(
+      `[tools-pack] vela-cli has no native ${process.platform}-${process.arch} package; bundling ${EMULATED_VELA_CLI_PACKAGE_BY_PLATFORM[`${process.platform}-${process.arch}`]} (x64 emulation): ${emulated}\n`,
+    );
+    return emulated;
+  }
 
   let resolver: VelaCliResolverModule;
   try {

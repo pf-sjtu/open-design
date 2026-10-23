@@ -94,6 +94,7 @@ function makeConfig(root: string, overrides: Partial<ToolPackConfig> = {}): Tool
     containerized: false,
     electronBuilderCliPath: "/x/electron-builder/cli.js",
     electronDistPath: "/x/electron/dist",
+    targetArch: "x64",
     electronVersion: "41.3.0",
     macCompression: "normal",
     namespace: "local-test",

@@ -79,4 +79,60 @@ describe("node-pty packaged runtime closure", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("validates the Windows arm64 prebuild including the ConPTY host binaries", async () => {
+    const root = await mkdtemp(join(tmpdir(), "open-design-node-pty-runtime-"));
+    const prebuildRoot = join(root, "node_modules", "node-pty", "prebuilds", "win32-arm64");
+
+    try {
+      await mkdir(join(prebuildRoot, "conpty"), { recursive: true });
+      for (const fileName of [
+        "conpty.node",
+        "conpty_console_list.node",
+        "pty.node",
+        "winpty-agent.exe",
+        "winpty.dll",
+      ]) {
+        await writeFile(join(prebuildRoot, fileName), Buffer.alloc(32 * 1024, 1));
+      }
+      await writeFile(join(prebuildRoot, "conpty", "conpty.dll"), Buffer.alloc(32 * 1024, 1));
+      await writeFile(join(prebuildRoot, "conpty", "OpenConsole.exe"), Buffer.alloc(32 * 1024, 1));
+
+      await expect(validateNodePtyRuntime({
+        appRoot: root,
+        arch: "arm64",
+        platform: "win32",
+      })).resolves.toBeNull();
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("reports the missing arm64 ConPTY host binary before packaging", async () => {
+    const root = await mkdtemp(join(tmpdir(), "open-design-node-pty-runtime-"));
+    const prebuildRoot = join(root, "node_modules", "node-pty", "prebuilds", "win32-arm64");
+
+    try {
+      await mkdir(join(prebuildRoot, "conpty"), { recursive: true });
+      for (const fileName of [
+        "conpty.node",
+        "conpty_console_list.node",
+        "pty.node",
+        "winpty-agent.exe",
+        "winpty.dll",
+      ]) {
+        await writeFile(join(prebuildRoot, fileName), Buffer.alloc(32 * 1024, 1));
+      }
+      await writeFile(join(prebuildRoot, "conpty", "conpty.dll"), Buffer.alloc(32 * 1024, 1));
+
+      const validationError = await validateNodePtyRuntime({
+        appRoot: root,
+        arch: "arm64",
+        platform: "win32",
+      });
+      expect(validationError).toContain("conpty/OpenConsole.exe");
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });

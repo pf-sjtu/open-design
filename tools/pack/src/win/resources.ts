@@ -83,6 +83,18 @@ export async function prepareResourceTree(
         platform: "win",
         requireBundled: config.requireVelaCli,
         resourceRoot,
+      }).then((copied) => {
+        // Vela publishes no win32-arm64 package. Report the consequence at build
+        // time instead of letting it surface as a login error in the packaged app.
+        if (copied == null && config.targetArch === "arm64") {
+          process.stderr.write(
+            "[tools-pack] warning: no Vela CLI bundled for the arm64 payload — windows-arm64 has no\n"
+            + "  @powerformer/vela-cli package. Workspace/login features will report\n"
+            + "  \"vela binary not found\" until VELA_BIN is set at runtime. Supply a local CLI with\n"
+            + "  OPEN_DESIGN_VELA_CLI_BIN=<path to vela.exe> when building (the x64 build runs under\n"
+            + "  Windows ARM emulation).\n",
+          );
+        }
       });
       return { resourceName: "open-design" };
     },

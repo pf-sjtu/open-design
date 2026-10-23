@@ -59,7 +59,7 @@ export async function verifyPackagedRuntime(input: RuntimeVerificationInput) {
   }
   const host = input.host ?? { platform: platform(), arch: arch() };
   const platformKey = `${({ darwin: 'mac', win32: 'win', linux: 'linux' } as Record<string, string>)[host.platform] ?? 'unsupported'}_${host.arch}`;
-  if (!['mac_arm64', 'mac_x64', 'win_x64', 'linux_x64'].includes(platformKey) || manifest.platformKey !== platformKey) {
+  if (!['mac_arm64', 'mac_x64', 'win_arm64', 'win_x64', 'linux_x64'].includes(platformKey) || manifest.platformKey !== platformKey) {
     throw new Error(`manifest platform ${String(manifest.platformKey)} does not match host ${platformKey}`);
   }
   const commit = text(object(manifest.github, 'manifest github').commit, 'release commit');

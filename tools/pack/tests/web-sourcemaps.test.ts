@@ -59,6 +59,7 @@ function fakeConfig(workspaceRoot: string): ToolPackConfig {
     containerized: false,
     electronBuilderCliPath: "/dev/null",
     electronDistPath: "/dev/null",
+    targetArch: "x64",
     electronVersion: "0.0.0",
     macCompression: "normal",
     namespace: "test",

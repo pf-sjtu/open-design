@@ -32,6 +32,19 @@ const REQUIRED_NODE_PTY_RUNTIME_FILES = {
     { label: "pty.node", relativePath: "pty.node" },
     { executable: true, label: "spawn-helper", relativePath: "spawn-helper" },
   ],
+  // node-pty 1.1.0's win32-arm64 prebuild ships the ConPTY host binaries in a
+  // `conpty/` subdirectory next to the N-API modules, while the x64 closure
+  // links them into conpty.node. Validating the extra files keeps a truncated
+  // arm64 prebuild from shipping a terminal that spawns nothing.
+  "win32-arm64": [
+    { label: "conpty.node", relativePath: "conpty.node" },
+    { label: "conpty_console_list.node", relativePath: "conpty_console_list.node" },
+    { label: "conpty/conpty.dll", relativePath: "conpty/conpty.dll" },
+    { label: "conpty/OpenConsole.exe", relativePath: "conpty/OpenConsole.exe" },
+    { label: "pty.node", relativePath: "pty.node" },
+    { label: "winpty-agent.exe", relativePath: "winpty-agent.exe" },
+    { label: "winpty.dll", relativePath: "winpty.dll" },
+  ],
   "win32-x64": [
     { label: "conpty.node", relativePath: "conpty.node" },
     { label: "conpty_console_list.node", relativePath: "conpty_console_list.node" },
