@@ -42,6 +42,7 @@ async function createResourceTreeCacheKey(config: ToolPackConfig, workspaceBuild
     velaOpenCodeCompanion: velaOpenCodeCompanion
       ? await hashPath(velaOpenCodeCompanion)
       : null,
+    withAgentRuntime: config.withAgentRuntime,
     workspaceBuildKey,
   });
 }
@@ -81,6 +82,10 @@ export async function prepareResourceTree(
       await cp(winResources.sevenZipExe, join(resourceRoot, "bin", "7z.exe"));
       await cp(winResources.sevenZipDll, join(resourceRoot, "bin", "7z.dll"));
       await copyOptionalVelaCliBinary({
+        // The OpenCode companion is what makes this tree ~170 MB. AMR can run
+        // against an API-backed agent instead, and `resolveAmrOpenCodeExecutable`
+        // falls back to PATH, so bundling is opt-in.
+        bundleOpenCodeCompanion: config.withAgentRuntime,
         platform: "win",
         requireBundled: config.requireVelaCli,
         resourceRoot,

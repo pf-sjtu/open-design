@@ -20,7 +20,22 @@ export const ELECTRON_BUILDER_FILE_PATTERNS = [
   "!**/node_modules/better-sqlite3/build/Release/obj/**",
   "!**/node_modules/better-sqlite3/deps",
   "!**/node_modules/better-sqlite3/deps/**",
+  // onnxruntime-node ships one native binding per platform+arch under
+  // `bin/napi-v<N>/`; `binding.js` loads only
+  // `${process.platform}/${process.arch}`, so the other five are dead weight
+  // (~174 MB). The Windows builder keeps win32 and drops the rest.
+  "!**/node_modules/onnxruntime-node/bin/napi-v*/darwin{,/**/*}",
+  "!**/node_modules/onnxruntime-node/bin/napi-v*/linux{,/**/*}",
 ] as const;
+
+/**
+ * Windows keeps only the target architecture of onnxruntime; a payload must
+ * never carry the other Windows arch (an x64 addon in an arm64 payload is a
+ * load failure waiting to happen).
+ */
+export function onnxRuntimeArchExcludes(targetArch: "arm64" | "x64"): string[] {
+  return [`!**/node_modules/onnxruntime-node/bin/napi-v*/win32/${targetArch === "arm64" ? "x64" : "arm64"}{,/**/*}`];
+}
 export const NSIS_INSTALLER_LANGUAGE_BY_WEB_LOCALE = {
   en: "en_US",
   fa: "fa_IR",

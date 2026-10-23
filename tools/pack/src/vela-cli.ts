@@ -112,6 +112,7 @@ export function resolveEmulatedVelaCliBinary(
 }
 
 export async function copyOptionalVelaCliBinary({
+  bundleOpenCodeCompanion = true,
   env = process.env,
   importPackage,
   platform,
@@ -120,6 +121,8 @@ export async function copyOptionalVelaCliBinary({
   runCommand = runVelaCliCommand,
   targetArch,
 }: {
+  /** Copy the `libexec/opencode` companion next to the CLI (~170 MB). */
+  bundleOpenCodeCompanion?: boolean;
   env?: NodeJS.ProcessEnv;
   importPackage?: (packageName: string) => Promise<VelaCliResolverModule>;
   platform: VelaCliPlatform;
@@ -136,7 +139,9 @@ export async function copyOptionalVelaCliBinary({
   const target = join(resourceRoot, "bin", targetBinaryName(platform));
   await mkdir(dirname(target), { recursive: true });
   await cp(source, target);
-  await copyBundledOpenCodeTree({ requireBundled, resourceRoot, source });
+  if (bundleOpenCodeCompanion) {
+    await copyBundledOpenCodeTree({ requireBundled, resourceRoot, source });
+  }
   if (platform !== "win") {
     await chmod(target, 0o755);
   }

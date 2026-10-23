@@ -505,6 +505,7 @@ async function copyResourceTree(config: ToolPackConfig, paths: LinuxPaths): Prom
   await cp(process.execPath, join(paths.resourceRoot, "bin", "node"));
   await chmod(join(paths.resourceRoot, "bin", "node"), 0o755);
   await copyOptionalVelaCliBinary({
+    bundleOpenCodeCompanion: config.withAgentRuntime,
     platform: "linux",
     requireBundled: config.requireVelaCli,
     resourceRoot: paths.resourceRoot,

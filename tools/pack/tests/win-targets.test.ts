@@ -8,8 +8,9 @@ import {
 } from "@/win/report.js";
 
 describe("resolveWinTargets", () => {
-  it("returns the full target set including the portable zip for `all`", () => {
-    expect(resolveWinTargets("all")).toEqual(["dir", "nsis", "zip"]);
+  it("builds the installable artifacts for `all` and leaves the portable zip opt-in", () => {
+    // The zip is a second full copy of the payload; `all` no longer pays for it.
+    expect(resolveWinTargets("all")).toEqual(["dir", "nsis"]);
   });
 
   it("returns only the requested single target", () => {
@@ -36,7 +37,7 @@ describe("shouldBuildWinNsisInstaller / shouldBuildWinPortableZip", () => {
     expect(shouldBuildWinNsisInstaller("dir")).toBe(false);
 
     expect(shouldBuildWinPortableZip("zip")).toBe(true);
-    expect(shouldBuildWinPortableZip("all")).toBe(true);
+    expect(shouldBuildWinPortableZip("all")).toBe(false);
     expect(shouldBuildWinPortableZip("nsis")).toBe(false);
     expect(shouldBuildWinPortableZip("dir")).toBe(false);
   });

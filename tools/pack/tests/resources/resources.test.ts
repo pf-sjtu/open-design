@@ -592,6 +592,37 @@ describe("copyOptionalVelaCliBinary", () => {
     }
   });
 
+  it("leaves the OpenCode companion out unless it is asked for", async () => {
+    const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-vela-no-companion-"));
+    const source = join(root, "source", "vela");
+    const resourceRoot = join(root, "resources", "open-design");
+    const expectedVersion = await pinnedVelaCliVersion();
+
+    try {
+      await mkdir(join(root, "source"), { recursive: true });
+      await writeFile(source, "#!/bin/sh\nexit 0\n", "utf8");
+      await writeFakeOpenCodeCompanion(source);
+
+      // The companion is ~170 MB and AMR can run against an API-backed agent,
+      // so a normal build ships only the CLI.
+      const copied = await copyOptionalVelaCliBinary({
+        bundleOpenCodeCompanion: false,
+        env: { OPEN_DESIGN_VELA_CLI_BIN: source },
+        platform: "mac",
+        requireBundled: true,
+        resourceRoot,
+        runCommand: matchingVelaCliCommand,
+      });
+
+      expect(copied?.target).toBe(join(resourceRoot, "bin", "vela"));
+      await expect(access(join(resourceRoot, "bin", "vela"))).resolves.toBeUndefined();
+      await expect(access(join(resourceRoot, "bin", "libexec", "opencode", "opencode"))).rejects.toThrow();
+      expect(expectedVersion.length).toBeGreaterThan(0);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("accepts a Vela CLI whose pull usage line marks stageDir optional", async () => {
     const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-vela-optional-stage-"));
     const source = join(root, "source", "vela");

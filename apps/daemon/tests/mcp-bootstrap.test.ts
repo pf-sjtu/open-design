@@ -54,6 +54,22 @@ describe("planMcpDaemonBootstrap", () => {
     expect(plan.env.OD_DATA_DIR).toBe("/tmp/open-design-data");
   });
 
+  it("does not hand an inherited NODE_OPTIONS to the packaged app", () => {
+    // A packaged Electron build rejects most NODE_OPTIONS on stderr. The value
+    // belongs to whatever launched the MCP client, not to the app we start.
+    const plan = planMcpDaemonBootstrap({
+      daemonReachable: false,
+      explicitDaemonUrl: false,
+      env: {
+        NODE_OPTIONS: "--max-old-space-size=4096",
+        OD_MCP_BOOTSTRAP_COMMAND: "/usr/bin/open",
+        OD_MCP_BOOTSTRAP_ARGS: '["--headless"]',
+      },
+    });
+    if (plan.action !== "spawn") throw new Error("expected spawn plan");
+    expect(plan.env.NODE_OPTIONS).toBeUndefined();
+  });
+
   it("refuses a relative or non-headless bootstrap command", () => {
     expect(planMcpDaemonBootstrap({
       daemonReachable: false,
@@ -194,9 +210,19 @@ describe("managed MCP registrations", () => {
       daemon: ["/ipc/daemon-runtime.sock", "/ipc/daemon-headless.sock"],
       desktop: ["/ipc/desktop-runtime.sock", "/ipc/desktop-headless.sock"],
     });
-    expect(parseManagedMcpDiscovery({ ...managedEnv(), OD_MCP_BOOTSTRAP_ARGS: '["--headless"]' })).toBeNull();
+    // The discovery block is the signal, not the managed argv marker: a
+    // registration written by a daemon in either mode names every mode, and
+    // requiring the marker here refused exactly those registrations.
+    expect(parseManagedMcpDiscovery({ ...managedEnv(), OD_MCP_BOOTSTRAP_ARGS: '["--headless"]' })).toEqual({
+      daemon: ["/ipc/daemon-runtime.sock", "/ipc/daemon-headless.sock"],
+      desktop: ["/ipc/desktop-runtime.sock", "/ipc/desktop-headless.sock"],
+    });
     expect(parseManagedMcpDiscovery(managedEnv({ [MCP_BOOTSTRAP_CONTRACT.DISCOVERY_ENV]: "{" }))).toBeNull();
     expect(parseManagedMcpDiscovery(managedEnv({ [MCP_BOOTSTRAP_CONTRACT.DISCOVERY_ENV]: '{"daemon":[],"desktop":[]}' }))).toBeNull();
+    // A registration predating the contract has no discovery block at all.
+    const legacy = { ...managedEnv() };
+    delete legacy[MCP_BOOTSTRAP_CONTRACT.DISCOVERY_ENV];
+    expect(parseManagedMcpDiscovery(legacy)).toBeNull();
   });
 
   it("finds the daemon in the other mode when the registered endpoint is gone", async () => {

@@ -33,6 +33,56 @@ function resolveToolPackRoot(startDir: string): string {
 
 export const WORKSPACE_ROOT = resolve(resolveToolPackRoot(__dirname), "../..");
 
+/**
+ * Env var that relocates the tools-pack root (build output, runtime state, and
+ * the installed app all follow it). Relative values resolve against the
+ * workspace root so a checked-in `.env` stays portable.
+ */
+export const TOOL_PACK_DIR_ENV = "OD_TOOLS_PACK_DIR";
+
+let workspaceEnvLoaded = false;
+
+/**
+ * Load the workspace `.env` once so `--dir` can be pinned there instead of
+ * repeated on every command. Real environment variables win: `process.loadEnvFile`
+ * never overwrites an existing key, and a missing file is not an error.
+ */
+function loadWorkspaceEnv(): void {
+  if (workspaceEnvLoaded) return;
+  workspaceEnvLoaded = true;
+  const envPath = join(WORKSPACE_ROOT, ".env");
+  if (!existsSync(envPath)) return;
+  try {
+    process.loadEnvFile(envPath);
+  } catch {
+    // A malformed .env must not break packaging; the command's own flags still apply.
+  }
+}
+
+function resolveToolPackRootDir(explicitDir: string | undefined): string | undefined {
+  if (explicitDir != null && explicitDir.length > 0) return explicitDir;
+  loadWorkspaceEnv();
+  const fromEnv = process.env[TOOL_PACK_DIR_ENV];
+  if (fromEnv == null || fromEnv.length === 0) return undefined;
+  return resolve(WORKSPACE_ROOT, fromEnv);
+}
+
+/** Env form of the agent-runtime opt-in, so `.env` can pin it per machine. */
+export const WITH_AGENT_RUNTIME_ENV = "OD_TOOLS_PACK_WITH_AGENT_RUNTIME";
+
+const TRUTHY_ENV_VALUES = new Set(["1", "true", "yes", "on"]);
+
+function resolveWithAgentRuntime(
+  flag: boolean | undefined,
+  env: NodeJS.ProcessEnv,
+): boolean {
+  if (flag === true) return true;
+  if (flag === false) return false;
+  loadWorkspaceEnv();
+  const value = env[WITH_AGENT_RUNTIME_ENV]?.trim().toLowerCase();
+  return value != null && TRUTHY_ENV_VALUES.has(value);
+}
+
 export type ToolPackPlatform = "mac" | "win" | "linux";
 export type ToolPackTargetArch = "arm64" | "x64";
 export type ToolPackBuildOutput = "all" | "app" | "appimage" | "dir" | "dmg" | "nsis" | "zip";
@@ -70,6 +120,8 @@ export type ToolPackCliOptions = {
   statusPollIntervalMs?: string | number;
   to?: string;
   updateAction?: string;
+  /** Bundle the Vela OpenCode companion (~170 MB) into the payload. */
+  withAgentRuntime?: boolean;
 };
 
 export type ToolPackRoots = {
@@ -110,6 +162,13 @@ export type ToolPackConfig = {
   /** Target CPU architecture of the packaged payload (never the build host arch). */
   targetArch: ToolPackTargetArch;
   amrProfile?: ToolPackAmrProfile;
+  /**
+   * Bundle the Vela OpenCode companion (`bin/libexec/opencode`, ~170 MB) into
+   * the payload. Off by default: AMR can also run against an API-backed agent,
+   * and `resolveAmrOpenCodeExecutable` falls back to PATH when it is absent.
+   * Opt in with `--with-agent-runtime` or `OD_TOOLS_PACK_WITH_AGENT_RUNTIME=1`.
+   */
+  withAgentRuntime?: boolean;
   telemetryRelayUrl?: string;
   /**
    * PostHog product-analytics ingest key, sourced from process.env.POSTHOG_KEY
@@ -410,7 +469,9 @@ export function resolveToolPackConfig(
     namespace: options.namespace ?? defaultNamespaceForAppVersion(platform, appVersion),
   });
   const defaultToolPackRoot = join(WORKSPACE_ROOT, ".tmp", "tools-pack");
-  const toolPackRoot = resolve(options.dir ?? defaultToolPackRoot);
+  const toolPackRoot = resolve(resolveToolPackRootDir(options.dir) ?? defaultToolPackRoot);
+  // The build cache must never move with the root: --dir only owns output,
+  // runtime, and install validation paths.
   const cacheRoot = resolve(options.cacheDir ?? join(defaultToolPackRoot, "cache"));
   const outputRoot = join(toolPackRoot, "out");
   const outputPlatformRoot = join(outputRoot, platform);
@@ -437,8 +498,7 @@ export function resolveToolPackConfig(
       },
       runtime: {
         namespaceBaseRoot: runtimeNamespaceBaseRoot,
-        namespaceRoot: join(runtimeNamespaceBaseRoot, namespace),
-      },
+        namespaceRoot: join(runtimeNamespaceBaseRoot, namespace),      },
       cacheRoot,
       toolPackRoot,
     },
@@ -451,6 +511,7 @@ export function resolveToolPackConfig(
     silent: options.silent !== false,
     signed: options.signed === true,
     targetArch: resolveToolPackTargetArch(platform, options.arch),
+    withAgentRuntime: resolveWithAgentRuntime(options.withAgentRuntime, process.env),
     amrProfile: resolveToolPackAmrProfile(process.env.OPEN_DESIGN_AMR_PROFILE),
     telemetryRelayUrl: resolveToolPackTelemetryRelayUrl(process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL),
     updateMetadataUrl: resolveToolPackUpdateMetadataUrl(process.env.OD_UPDATE_METADATA_URL),

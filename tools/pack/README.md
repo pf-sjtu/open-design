@@ -75,7 +75,7 @@ Local lifecycle commands:
 
 - `tools-pack win build --to dir` for fast unpacked smoke builds.
 - `tools-pack win build --to nsis` for installer builds.
-- `tools-pack win build --to all` for both outputs.
+- `tools-pack win build --to all` for both outputs (the portable zip is opt-in via `--to zip`).
 - `tools-pack win install`
 - `tools-pack win start`
 - `tools-pack win inspect --expr "document.title"`
@@ -87,6 +87,18 @@ Local lifecycle commands:
 
 Build artifacts are namespace-scoped under `.tmp/tools-pack/out/win/namespaces/<namespace>/`.
 Packaged runtime state is namespace-scoped under `.tmp/tools-pack/runtime/win/namespaces/<namespace>/`.
+
+Both roots move together when `OD_TOOLS_PACK_DIR` is set (a repo `.env` can pin it, e.g.
+`OD_TOOLS_PACK_DIR=../installed`), so the built app installs under
+`<root>/runtime/win/namespaces/<namespace>/install/Open Design`. `--dir` still wins over the
+environment for one-off runs, and the build cache never follows: it stays under the workspace
+`.tmp/tools-pack/cache`.
+
+The Vela OpenCode companion (`bin/libexec/opencode`, ~170 MB) is not bundled by default. AMR
+resolves an OpenCode at run time (`VELA_OPENCODE_BIN` → the selected Vela's sibling companion →
+the packaged companion → PATH), so a host install such as `bun add -g opencode-ai` keeps AMR
+available. Pass `--with-agent-runtime` (or `OD_TOOLS_PACK_WITH_AGENT_RUNTIME=1`) to ship it.
+
 `--to dir` may point `built-app.json` at an immutable cached `win-unpacked` executable while keeping
 namespace-local config and runtime paths outside that cache entry.
 

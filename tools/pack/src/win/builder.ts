@@ -32,6 +32,7 @@ import {
   ELECTRON_BUILDER_ASAR,
   ELECTRON_BUILDER_BUILD_DEPENDENCIES_FROM_SOURCE,
   ELECTRON_BUILDER_FILE_PATTERNS,
+  onnxRuntimeArchExcludes,
   ELECTRON_BUILDER_NODE_GYP_REBUILD,
   ELECTRON_BUILDER_NPM_REBUILD,
   NSIS_INSTALLER_LANGUAGE_BY_WEB_LOCALE,
@@ -219,7 +220,7 @@ async function runElectronBuilderRaw(
       // process.resourcesPath by the desktop main at runtime).
       domToPptxBundleResource(config),
     ],
-    files: [...ELECTRON_BUILDER_FILE_PATTERNS],
+    files: [...ELECTRON_BUILDER_FILE_PATTERNS, ...onnxRuntimeArchExcludes(config.targetArch)],
     forceCodeSigning: false,
     icon: paths.winIconPath,
     nodeGypRebuild: ELECTRON_BUILDER_NODE_GYP_REBUILD,

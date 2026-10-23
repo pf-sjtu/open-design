@@ -27,7 +27,10 @@ export function resolveWinTargets(to: ToolPackConfig["to"]): Array<"dir" | "nsis
     case "dir":
       return ["dir"];
     case "all":
-      return ["dir", "nsis", "zip"];
+      // "all" means every artifact a local install needs. The portable zip is
+      // a second full copy of the payload (~465 MB); it is now opt-in via
+      // `--to zip` so a routine build does not pay for it.
+      return ["dir", "nsis"];
     case "nsis":
       return ["nsis"];
     case "zip":

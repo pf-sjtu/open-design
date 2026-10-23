@@ -19,19 +19,44 @@ describe('managed MCP registration', () => {
     });
   });
 
-  it('adds discovery only for a managed launch, in the shape the MCP process reads', () => {
+  it('adds discovery in the shape the MCP process reads', () => {
     const managedArgs = JSON.stringify(['--headless', MCP_BOOTSTRAP_CONTRACT.MANAGED_ARG]);
     const env = managedMcpRegistrationEnv({ OD_MCP_BOOTSTRAP_ARGS: managedArgs }, () => stamp);
     expect(Object.keys(env)).toEqual([MCP_BOOTSTRAP_CONTRACT.DISCOVERY_ENV]);
     expect(parseManagedMcpDiscovery({ OD_MCP_BOOTSTRAP_ARGS: managedArgs, ...env })).not.toBeNull();
 
-    // Registrations under an older outer are unchanged.
-    expect(managedMcpRegistrationEnv({ OD_MCP_BOOTSTRAP_ARGS: '["--headless"]' }, () => stamp)).toEqual({});
+    // The managed argv marker no longer gates discovery: a daemon that runs in
+    // either mode must describe both, or the registration dies with its mode.
+    expect(Object.keys(managedMcpRegistrationEnv({ OD_MCP_BOOTSTRAP_ARGS: '["--headless"]' }, () => stamp)))
+      .toEqual([MCP_BOOTSTRAP_CONTRACT.DISCOVERY_ENV]);
   });
 
   it('keeps the plain registration when the daemon is not sidecar-supervised', () => {
     const managedArgs = JSON.stringify(['--headless', MCP_BOOTSTRAP_CONTRACT.MANAGED_ARG]);
     expect(managedMcpRegistrationEnv({ OD_MCP_BOOTSTRAP_ARGS: managedArgs }, () => { throw new Error('no stamp'); })).toEqual({});
+  });
+});
+
+describe('cross-mode MCP registration', () => {
+  // The registration is written once, but the daemon that serves it can run in
+  // either sidecar mode: a GUI launch owns the namespace in `runtime`, while an
+  // MCP bootstrap or a `tools-pack --headless` start owns it in `headless`.
+  // A registration that names only the mode that happened to be current when
+  // it was written strands every later MCP session on a pipe nobody listens on.
+  const endpoint = (s: { app: string; mode: string }) => `/ipc/${s.app}-${s.mode}.sock`;
+
+  it('names every mode so a registration outlives a mode switch', () => {
+    for (const mode of ['runtime', 'headless'] as const) {
+      const discovery = parseManagedMcpDiscovery({
+        OD_MCP_BOOTSTRAP_ARGS: JSON.stringify(['--headless']),
+        ...managedMcpRegistrationEnv({}, () => ({ ...stamp, mode }), endpoint),
+      });
+      expect(discovery).not.toBeNull();
+      expect(discovery!.daemon).toEqual([
+        '/ipc/daemon-runtime.sock',
+        '/ipc/daemon-headless.sock',
+      ]);
+    }
   });
 });
 

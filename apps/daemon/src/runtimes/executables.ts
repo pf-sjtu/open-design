@@ -293,10 +293,12 @@ function packagedBuiltInExecutable(
   if (def.id !== 'amr') return null;
   const resourceRoot = process.env.OD_RESOURCE_ROOT?.trim();
   if (!resourceRoot) return null;
-  if (
-    !resolveAmrOpenCodeExecutable({ ...process.env, ...configuredEnv }) &&
-    !packagedVelaOpenCodeCompanionTree(resourceRoot)
-  ) {
+  // AMR needs the Vela CLI plus an OpenCode runtime to drive. A packaged build
+  // may ship that companion, but it is ~170 MB and a host-installed OpenCode
+  // (bun/pnpm global, or PATH) is usually newer — so the companion is opt-in
+  // at build time and this resolver accepts either source. Vela itself validates
+  // the pair at run time and reports a clear error if it disagrees.
+  if (!resolveAmrOpenCodeExecutable({ ...process.env, ...configuredEnv })) {
     return null;
   }
   const candidate = path.join(

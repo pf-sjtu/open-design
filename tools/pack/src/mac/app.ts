@@ -153,6 +153,9 @@ export async function copyResourceTree(config: ToolPackConfig, paths: MacPaths):
     resourceRoot: paths.resourceRoot,
   });
   await copyOptionalVelaCliBinary({
+    // Same opt-in as Windows: AMR resolves an OpenCode at run time, so the
+    // ~170 MB companion is only shipped when a build explicitly asks for it.
+    bundleOpenCodeCompanion: config.withAgentRuntime,
     platform: "mac",
     requireBundled: config.requireVelaCli,
     resourceRoot: paths.resourceRoot,

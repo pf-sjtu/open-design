@@ -75,6 +75,15 @@ upstream matrix.
   `@ffmpeg-installer/ffmpeg`. Both are handled by the local-first layer: set
   `OPEN_DESIGN_VELA_CLI_BIN` / `OD_FFMPEG_BIN` (or put ffmpeg on `PATH`) and the
   x64 equivalents run under Windows ARM emulation.
+- Vela's OpenCode companion (`bin/libexec/opencode`, ~170 MB) is **not** bundled
+  by default. AMR resolves an OpenCode runtime at run time (`VELA_OPENCODE_BIN`
+  → the selected Vela's sibling companion → the packaged companion → PATH), so a
+  host install such as `bun add -g opencode-ai` keeps AMR available. Pass
+  `--with-agent-runtime` (or `OD_TOOLS_PACK_WITH_AGENT_RUNTIME=1`) to ship it.
+- `tools-pack win build --to all` produces the installer and unpacked dir; the
+  portable zip is opt-in via `--to zip` because it is a second full copy.
+- `OD_TOOLS_PACK_DIR` (default `.tmp/tools-pack`) relocates build output,
+  runtime state, and the installed app together; a repo `.env` can pin it.
 - `tools-pack` audits every packaged payload's PE architecture and fails on a
   `foreign` binary; see `tools/pack/README.md` for the classification.
 - `tools-dev` (developer loop) is unaffected: it runs on the host `node`, which

@@ -82,7 +82,7 @@ function addSharedOptions(command: CacCommand) {
 const TO_HELP_BY_PLATFORM: Record<ToolPackPlatform, string> = {
   linux: "build target: all|appimage|dir (default: all)",
   mac: "build target: all|app|dmg|zip (default: all)",
-  win: "build target: all|dir|nsis|zip (default: nsis). `zip` produces a portable zip from the unpacked build; `all` produces dir+nsis+zip.",
+  win: "build target: all|dir|nsis|zip (default: nsis). `zip` produces a portable zip from the unpacked build; `all` produces dir+nsis.",
 };
 
 function addBuildOptions(command: CacCommand, platform: ToolPackPlatform) {
@@ -91,6 +91,7 @@ function addBuildOptions(command: CacCommand, platform: ToolPackPlatform) {
     .option("--arch <arch>", "target CPU architecture of the packaged payload: arm64|x64 (win/mac; linux is x64 only)")
     .option("--portable", "do not bake local tools-pack runtime roots into the packaged config")
     .option("--require-vela-cli", "fail packaging when the bundled Vela CLI cannot be resolved")
+    .option("--with-agent-runtime", "bundle the Vela OpenCode companion (~170 MB) into the payload")
     .option("--signed", "build a signed mac artifact")
     .option("--notarize", "notarize a signed mac artifact")
     .option("--to <target>", TO_HELP_BY_PLATFORM[platform]);

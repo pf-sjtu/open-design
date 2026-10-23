@@ -251,3 +251,43 @@ describe("resolveToolPackConfig vela web origin", () => {
     );
   });
 });
+
+// The install root is a developer-machine choice, not a build input: a checked-in
+// `.env` pins it so every command (build, install, inspect, cleanup) agrees on
+// one directory instead of drifting back to the workspace scratch root.
+describe("resolveToolPackConfig tools-pack root", () => {
+  const savedDir = process.env.OD_TOOLS_PACK_DIR;
+
+  afterEach(() => {
+    if (savedDir == null) delete process.env.OD_TOOLS_PACK_DIR;
+    else process.env.OD_TOOLS_PACK_DIR = savedDir;
+  });
+
+  it("takes an explicit --dir over the environment", () => {
+    process.env.OD_TOOLS_PACK_DIR = join(WORKSPACE_ROOT, "from-env");
+    const config = resolveToolPackConfig("win", {
+      dir: join(WORKSPACE_ROOT, "from-flag"),
+      namespace: "root-test",
+    });
+    expect(config.roots.runtime.namespaceRoot).toBe(
+      join(WORKSPACE_ROOT, "from-flag", "runtime", "win", "namespaces", "root-test"),
+    );
+  });
+
+  it("resolves a relative environment root against the workspace", () => {
+    process.env.OD_TOOLS_PACK_DIR = "../installed-root-test";
+    const config = resolveToolPackConfig("win", { namespace: "root-test" });
+    expect(config.roots.runtime.namespaceRoot).toBe(
+      join(WORKSPACE_ROOT, "..", "installed-root-test", "runtime", "win", "namespaces", "root-test"),
+    );
+    expect(config.roots.output.namespaceRoot).toBe(
+      join(WORKSPACE_ROOT, "..", "installed-root-test", "out", "win", "namespaces", "root-test"),
+    );
+  });
+
+  it("keeps the build cache at the workspace default when only the root moves", () => {
+    process.env.OD_TOOLS_PACK_DIR = "../installed-root-test";
+    const config = resolveToolPackConfig("win", { namespace: "root-test" });
+    expect(config.roots.cacheRoot).toBe(join(WORKSPACE_ROOT, ".tmp", "tools-pack", "cache"));
+  });
+});

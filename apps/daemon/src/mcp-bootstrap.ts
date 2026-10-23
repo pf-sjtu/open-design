@@ -59,6 +59,10 @@ export function planMcpDaemonBootstrap(
   const env = { ...options.env };
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.OD_DAEMON_URL;
+  // A packaged Electron build refuses most NODE_OPTIONS and writes an
+  // "unsupported" error to stderr; the inherited value describes the process
+  // that launched the MCP client, not the app we are about to start.
+  delete env.NODE_OPTIONS;
   for (const key of Object.keys(env)) {
     if (key.startsWith("OD_SIDECAR_")) delete env[key];
   }
@@ -105,12 +109,16 @@ export function isManagedMcpBootstrapEnv(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
- * The discovery endpoints of a managed registration, or null when the
- * registration is not managed or is malformed; either way the caller keeps
+ * The discovery endpoints of a registration, or null when the registration
+ * carries no discovery block or it is malformed; either way the caller keeps
  * the unmanaged bootstrap path.
+ *
+ * `OD_MCP_DISCOVERY` is its own signal. Registrations written before the
+ * managed contract predate the block and stay on the unmanaged path; anything
+ * that carries it is trusted to describe every mode, whichever mode wrote it.
  */
 export function parseManagedMcpDiscovery(env: NodeJS.ProcessEnv): ManagedMcpDiscovery | null {
-  if (!isManagedMcpBootstrapEnv(env)) return null;
+  if (env[MCP_BOOTSTRAP_CONTRACT.DISCOVERY_ENV] == null) return null;
   try {
     const parsed = JSON.parse(env[MCP_BOOTSTRAP_CONTRACT.DISCOVERY_ENV] ?? "") as Partial<ManagedMcpDiscovery>;
     const isEndpointList = (value: unknown): value is string[] =>
@@ -193,7 +201,7 @@ export async function ensureMcpDaemonUrl(
     if (daemonUrl != null && await probeDaemon(daemonUrl)) return daemonUrl;
   }
   throw new Error(
-    `OpenDesign was launched headlessly but its daemon did not become ready within ${timeoutMs}ms.`,
+    `OpenDesign was launched headlessly but its daemon did not become ready within ${timeoutMs}ms.${bootstrapStderrDetail()}`,
   );
 }
 
@@ -313,14 +321,37 @@ async function spawnBootstrapDetached(
   const child = spawn(plan.command, plan.args, {
     detached: true,
     env: plan.env,
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true,
   });
+  // The bootstrap is detached and windowless, so a child that dies on startup
+  // leaves nothing behind but this pipe. Keep a bounded tail for the
+  // "launched headlessly but never became ready" error; drain past the cap so a
+  // chatty child can never block on a full pipe.
+  const stderrChunks: string[] = [];
+  let stderrBytes = 0;
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data", (chunk: string) => {
+    if (stderrBytes >= BOOTSTRAP_STDERR_TAIL_BYTES) return;
+    stderrBytes += Buffer.byteLength(chunk);
+    stderrChunks.push(chunk);
+  });
+  child.stderr?.on("error", () => undefined);
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", resolve);
     child.once("error", reject);
   });
   child.unref();
+  lastBootstrapStderr = () => stderrChunks.join("").trim();
+}
+
+/** Stderr tail of the last bootstrap this process spawned, for diagnostics. */
+const BOOTSTRAP_STDERR_TAIL_BYTES = 8 * 1024;
+let lastBootstrapStderr: () => string = () => "";
+
+function bootstrapStderrDetail(): string {
+  const text = lastBootstrapStderr();
+  return text.length === 0 ? "" : `\nHeadless bootstrap stderr:\n${text}`;
 }
 
 async function delay(milliseconds: number): Promise<void> {
